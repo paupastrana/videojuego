@@ -34,11 +34,12 @@
   .hud-top { position:absolute; top:calc(10px + env(safe-area-inset-top,0px)); left:10px; right:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
   .hud-card { min-width:80px; padding:8px 12px; border-radius:16px; text-align:center; background:rgba(30,60,20,.8); border:2px solid #7bc043; }
   .hud-label { display:block; font-size:9px; letter-spacing:1px; text-transform:uppercase; color:#b7d9a0; }
+  .hud-card.low { border-color:#ff6b5a; }
+  .hud-card.low .hud-value { color:#ff6b5a; }
   .hud-value { display:block; font-size:19px; font-weight:900; color:#ffd23f; }
 
   #crosshair { position:fixed; left:50%; top:50%; width:56px; height:56px; transform:translate(-50%,-50%); z-index:12;
     border:3px solid #ffd23f; border-radius:50%; box-shadow:0 0 10px rgba(0,0,0,.8); pointer-events:auto; }
-  #crosshair::after { content:""; position:absolute; left:50%; top:50%; width:8px; height:8px; margin:-4px; border-radius:50%; background:#ff3b30; }
 
   #hitButton { position:fixed; right:22px; bottom:calc(24px + env(safe-area-inset-bottom,0px)); z-index:15; width:100px; height:100px;
     border-radius:28px; border:4px solid #fff; font-size:44px; background:linear-gradient(180deg,#ffe066,#e08a00);
@@ -89,7 +90,7 @@
     <div class="rules">
       <div class="rule"><b>🐹</b><span>Apunta al topo y pulsa el martillo para aplastarlo: ganas puntos.</span></div>
       <div class="rule"><b>💣</b><span>Si aplastas una bomba pierdes una vida. Tienes 3 vidas.</span></div>
-      <div class="rule"><b>⚡</b><span>Cada nivel: topos más rápidos, más a la vez y más bombas.</span></div>
+      <div class="rule"><b>⚡</b><span>Tienes 1 minuto: con el tiempo los topos salen más rápido y hay más bombas.</span></div>
     </div>
     <button id="startButton" class="btn">JUGAR</button>
   </div>
@@ -113,6 +114,7 @@
     <div class="hud-card"><span class="hud-label">Nivel</span><span id="levelValue" class="hud-value">1</span></div>
     <div class="hud-card"><span class="hud-label">Vidas</span><span id="livesValue" class="hud-value">❤️❤️❤️</span></div>
     <div class="hud-card"><span class="hud-label">Racha</span><span id="streakValue" class="hud-value">0</span></div>
+    <div id="timeCard" class="hud-card"><span class="hud-label">Tiempo</span><span id="timeValue" class="hud-value">60</span></div>
   </div>
 </div>
 
@@ -125,8 +127,8 @@
 <!-- GAME OVER -->
 <section id="gameOverScreen" class="screen hidden">
   <div class="panel">
-    <h1 class="title" style="color:#ff6b5a">GAME OVER</h1>
-    <p class="subtitle">¡Una bomba te explotó en la cara!</p>
+    <h1 id="gameOverTitle" class="title" style="color:#ff6b5a">GAME OVER</h1>
+    <p id="gameOverText" class="subtitle">¡Una bomba te explotó en la cara!</p>
     <div class="stats">
       <div class="stat"><div id="finalScore" class="stat-number">0</div><div class="stat-label">Puntos</div></div>
       <div class="stat"><div id="finalLevel" class="stat-number">1</div><div class="stat-label">Nivel</div></div>
@@ -141,7 +143,7 @@
 <!-- AUDIO (opcional: si no existen los archivos, el juego funciona igual) -->
 <audio id="buttonSound" src="boton.mp3" preload="auto"></audio>
 <audio id="hitSound" src="disparo.mp3" preload="auto"></audio>
-<audio id="moleSound" src="muerte.mp3" preload="auto"></audio>
+<audio id="moleSound" src="topo.mp3" preload="auto"></audio>
 <audio id="bombSound" src="bomba.mp3" preload="auto"></audio>
 <audio id="backgroundMusic" src="fondo.mp3" preload="auto" loop></audio>
 
@@ -152,10 +154,11 @@ window.THREE = window.THREE || AFRAME.THREE;
 /* ================= ESTADO ================= */
 const GAME = {
   noCamera:false, running:false, score:0, level:1, lives:3, kills:0, streak:0, bestStreak:0,
-  lastSpawn:0, slots:[]   // un elemento por hoyo: { el, kind, timer } o null
+  lastSpawn:0, startTime:0, timeLeft:60, slots:[]   // un elemento por hoyo: { el, kind, timer } o null
 };
 
 /* Hoyos: cuadrícula 3x3 delante del jugador (sobre el suelo) */
+const GAME_SECONDS = 60, LEVEL_EVERY = 8;   // 1 minuto; sube de nivel cada 8 s
 const HOLES = [];
 [-1.8, -2.6, -3.4].forEach(z => [-1.0, 0, 1.0].forEach(x => HOLES.push({ x, z })));
 
@@ -163,8 +166,8 @@ const HOLES = [];
 function difficulty() {
   const l = GAME.level;
   return {
-    upTime:    Math.max(650, 1900 - (l - 1) * 140),   // ms que se queda arriba
-    interval:  Math.max(450, 1400 - (l - 1) * 100),   // ms entre apariciones
+    upTime:    Math.max(600, 1900 - (l - 1) * 170),   // ms que se queda arriba
+    interval:  Math.max(400, 1400 - (l - 1) * 130),   // ms entre apariciones
     maxAlive:  Math.min(5, 1 + Math.floor((l - 1) / 2)),
     maxBombs:  Math.min(4, 1 + Math.floor(l / 3)),
     bombChance:Math.min(0.5, 0.12 + (l - 1) * 0.045)
@@ -183,6 +186,49 @@ function play(id, vol) {
 }
 function startMusic() {
   try { const m = $("backgroundMusic"); m.volume = 0.35; m.play().catch(() => {}); } catch (e) {}
+}
+
+/* Sonidos sintetizados (se usan si no existen topo.mp3 / bomba.mp3) */
+let audioCtx = null;
+function ensureAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch (e) {}
+}
+function audioOk(id) { const a = $(id); return a && a.readyState >= 2 && !a.error; }
+function noiseBuffer(sec) {
+  const n = Math.floor(audioCtx.sampleRate * sec), b = audioCtx.createBuffer(1, n, audioCtx.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+  return b;
+}
+function playMole() {
+  if (audioOk("moleSound")) { play("moleSound", 0.8); return; }
+  try {
+    ensureAudio(); const t = audioCtx.currentTime;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = "square"; o.frequency.setValueAtTime(700, t); o.frequency.exponentialRampToValueAtTime(120, t + 0.2);
+    g.gain.setValueAtTime(0.28, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 0.25);
+    const n = audioCtx.createBufferSource(), ng = audioCtx.createGain();
+    n.buffer = noiseBuffer(0.1); ng.gain.setValueAtTime(0.25, t); ng.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    n.connect(ng).connect(audioCtx.destination); n.start(t);
+  } catch (e) {}
+}
+function playBomb() {
+  if (audioOk("bombSound")) { play("bombSound", 0.9); return; }
+  try {
+    ensureAudio(); const t = audioCtx.currentTime;
+    const n = audioCtx.createBufferSource(), f = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+    n.buffer = noiseBuffer(0.8); f.type = "lowpass";
+    f.frequency.setValueAtTime(2500, t); f.frequency.exponentialRampToValueAtTime(60, t + 0.7);
+    g.gain.setValueAtTime(0.9, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+    n.connect(f).connect(g).connect(audioCtx.destination); n.start(t);
+    const o = audioCtx.createOscillator(), og = audioCtx.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.5);
+    og.gain.setValueAtTime(0.9, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    o.connect(og).connect(audioCtx.destination); o.start(t); o.stop(t + 0.6);
+  } catch (e) {}
 }
 
 /* ================= MENSAJES ================= */
@@ -220,7 +266,7 @@ async function activateCamera() {
 }
 
 $("startButton").addEventListener("click", async () => {
-  play("buttonSound"); startMusic();
+  ensureAudio(); play("buttonSound"); startMusic();
   await requestOrientationPermission();
   menuScreen.classList.add("hidden");
   calibrationScreen.classList.remove("hidden");
@@ -438,7 +484,7 @@ function resolverGolpe(el) {
   clearTimeout(s.timer);
 
   if (s.kind === "mole") {
-    play("moleSound", 0.65);
+    playMole();
     GAME.streak++;
     GAME.bestStreak = Math.max(GAME.bestStreak, GAME.streak);
     GAME.kills++;
@@ -454,16 +500,11 @@ function resolverGolpe(el) {
     s.pop.setAttribute("animation__squash", { property: "scale", to: "1.5 0.1 1.5", dur: 120, easing: "easeOutQuad" });
     showMessage(bonus ? `🔥 RACHA x${GAME.streak}  +${bonus}` : `+${points}`);
 
-    const newLevel = 1 + Math.floor(GAME.kills / 5);
-    if (newLevel > GAME.level) {
-      GAME.level = newLevel;
-      setTimeout(() => showMessage(`⚡ NIVEL ${GAME.level}`), 600);
-    }
     setTimeout(() => removeSlot(idx), 260);
 
   } else {
     /* Bomba: explota y pierdes una vida */
-    play("bombSound", 0.8);
+    playBomb();
     GAME.lives--;
     GAME.streak = 0;
     flashRed();
@@ -479,7 +520,7 @@ function resolverGolpe(el) {
     s.pop.setAttribute("visible", "false");
     setTimeout(() => removeSlot(idx), 320);
 
-    if (GAME.lives <= 0) { updateHUD(); endGame(); return; }
+    if (GAME.lives <= 0) { updateHUD(); endGame("bombs"); return; }
   }
   updateHUD();
 }
@@ -490,13 +531,17 @@ function updateHUD() {
   $("levelValue").textContent = GAME.level;
   $("livesValue").textContent = "❤️".repeat(Math.max(0, GAME.lives)) || "💀";
   $("streakValue").textContent = "🔥 " + GAME.streak;
+  $("timeValue").textContent = GAME.timeLeft;
+  $("timeCard").classList.toggle("low", GAME.timeLeft <= 10);
 }
 
 /* ================= INICIO / FIN ================= */
 function startGame() {
   GAME.running = true;
   GAME.score = 0; GAME.level = 1; GAME.lives = 3; GAME.kills = 0; GAME.streak = 0; GAME.bestStreak = 0;
-  GAME.lastSpawn = performance.now() + 600;
+  GAME.startTime = performance.now() + 600;
+  GAME.timeLeft = GAME_SECONDS;
+  GAME.lastSpawn = GAME.startTime;
   buildArena();
   if (GAME.noCamera) {
     try { $("mainCamera").components["look-controls"].pitchObject.rotation.x = -0.45; } catch (e) {}
@@ -509,9 +554,12 @@ function startGame() {
   showMessage("¡Aplasta los topos!");
 }
 
-function endGame() {
+function endGame(reason) {
   if (!GAME.running) return;
   GAME.running = false;
+  const t = $("gameOverTitle"), x = $("gameOverText");
+  if (reason === "time") { t.textContent = "¡TIEMPO!"; t.style.color = "#ffd23f"; x.textContent = "Se acabó el minuto. ¡Buen trabajo!"; }
+  else { t.textContent = "GAME OVER"; t.style.color = "#ff6b5a"; x.textContent = "¡Una bomba te explotó en la cara!"; }
   GAME.slots.forEach((s, i) => removeSlot(i));
   [hud, crosshair, hitButton].forEach(e => e.classList.add("hidden"));
   $("finalScore").textContent = GAME.score;
@@ -533,9 +581,14 @@ $("menuButton").addEventListener("click", () => {
 
 /* ================= LOOP ================= */
 function gameLoop(now) {
-  if (GAME.running && now - GAME.lastSpawn >= difficulty().interval) {
-    spawnTarget();
-    GAME.lastSpawn = now;
+  if (GAME.running) {
+    const elapsed = Math.max(0, now - GAME.startTime);
+    const left = Math.max(0, Math.ceil(GAME_SECONDS - elapsed / 1000));
+    const lvl = 1 + Math.floor(elapsed / 1000 / LEVEL_EVERY);
+    if (left !== GAME.timeLeft) { GAME.timeLeft = left; updateHUD(); }
+    if (lvl > GAME.level) { GAME.level = lvl; updateHUD(); showMessage(`⚡ NIVEL ${lvl}`); }
+    if (left <= 0) endGame("time");
+    else if (now - GAME.lastSpawn >= difficulty().interval) { spawnTarget(); GAME.lastSpawn = now; }
   }
   requestAnimationFrame(gameLoop);
 }
@@ -589,6 +642,7 @@ function golpearEnPantalla(clientX, clientY) {
 }
 
 document.addEventListener("pointerdown", e => {
+  ensureAudio();
   if (!GAME.running) return;
   if (e.target.closest && e.target.closest("button, .screen, #crosshair")) return;
   golpearEnPantalla(e.clientX, e.clientY);
