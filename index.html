@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Whack-a-Mole AR - Interactivo</title>
+  <title>Whack-a-Mole AR - Hoyos Limpios</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
 
@@ -20,8 +20,18 @@
       height: 100%;
       overflow: hidden;
       font-family: 'Fredoka', cursive, sans-serif;
-      background-color: #0f172a;
+      background-color: #000000;
       color: #ffffff;
+    }
+
+    #webcam {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
     }
 
     #canvas-container {
@@ -31,6 +41,7 @@
       top: 0;
       left: 0;
       z-index: 1;
+      pointer-events: auto;
     }
 
     .ui-layer {
@@ -65,7 +76,7 @@
       border: 2px solid rgba(255, 255, 255, 0.2);
       border-radius: 16px;
       padding: 8px 14px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
     }
 
     .hud-title {
@@ -168,6 +179,7 @@
 </head>
 <body>
 
+  <video id="webcam" autoplay playsinline muted></video>
   <div id="canvas-container"></div>
 
   <div class="ui-layer">
@@ -187,7 +199,7 @@
     </div>
 
     <div id="scan-banner" class="scan-banner">
-      📍 Mueve el cursor/pantalla y TOCA para fijar el terreno de juego
+      📷 Escanea tu entorno y TOCA LA PANTALLA para colocar el juego
     </div>
   </div>
 
@@ -201,7 +213,7 @@
         <div id="final-score" style="font-size: 2.5rem; font-weight: 700; color: #facc15;">0</div>
       </div>
 
-      <button id="restart-btn" class="btn-action">Reubicar y Jugar de Nuevo</button>
+      <button id="restart-btn" class="btn-action">Jugar de Nuevo</button>
     </div>
   </div>
 
@@ -296,26 +308,35 @@
 
     const virtualFloorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
+    startWebcam();
     init();
     animate();
+
+    function startWebcam() {
+      const video = document.getElementById('webcam');
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          .then(stream => { video.srcObject = stream; })
+          .catch(err => { console.warn("Cámara no disponible:", err); });
+      }
+    }
 
     function init() {
       const container = document.getElementById('canvas-container');
 
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0f172a);
-
       camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
       camera.position.set(0, 2.2, 2.2);
       camera.lookAt(0, 0, 0);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setClearColor(0x000000, 0);
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
       container.appendChild(renderer.domElement);
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      scene.add(new THREE.AmbientLight(0xffffff, 0.9));
       const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
       dirLight.position.set(2, 4, 3);
       scene.add(dirLight);
@@ -338,28 +359,32 @@
       document.getElementById('restart-btn').addEventListener('click', resetPlacement);
     }
 
+    // --- CONSTRUCCIÓN LIMPIA DEL TERRENO CON HOYOS DIRECTOS ---
     function buildEnvironment() {
       groundGroup = new THREE.Group();
 
-      const baseGeo = new THREE.BoxGeometry(1.8, 0.12, 1.3);
-      const baseMat = new THREE.MeshStandardMaterial({ color: 0x4da63b, roughness: 0.8 });
+      const baseGeo = new THREE.BoxGeometry(1.82, 0.1, 1.32);
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0x48bb78, roughness: 0.6 });
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      baseMesh.position.y = -0.06;
+      baseMesh.position.y = -0.05;
       groundGroup.add(baseMesh);
 
+      // Hoyos limpios con marco de tierra y fondo oscuro
       holePositions.forEach((pos, idx) => {
         const holeGroup = new THREE.Group();
         holeGroup.position.set(pos.x, 0, pos.z);
 
-        const ringGeo = new THREE.RingGeometry(0.14, 0.2, 32);
+        // Borde plano del hoyo
+        const ringGeo = new THREE.RingGeometry(0.14, 0.18, 32);
         const ringMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
         ringMesh.rotation.x = -Math.PI / 2;
         ringMesh.position.y = 0.002;
         holeGroup.add(ringMesh);
 
+        // Fondo oscuro del hoyo
         const innerGeo = new THREE.CircleGeometry(0.14, 32);
-        const innerMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        const innerMat = new THREE.MeshBasicMaterial({ color: 0x0f0a06 });
         const innerMesh = new THREE.Mesh(innerGeo, innerMat);
         innerMesh.rotation.x = -Math.PI / 2;
         innerMesh.position.y = 0.001;
@@ -374,96 +399,108 @@
       scene.add(groundGroup);
     }
 
-    // --- CÓDIGO DEL TOPO LINDO Y DETALLADO ---
     function createMoleMesh() {
       const moleGroup = new THREE.Group();
 
-      // Cuerpo suave café
-      const bodyGeo = new THREE.SphereGeometry(0.12, 24, 16);
-      bodyGeo.scale(1, 1.2, 1);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x7c523e, roughness: 0.8 });
+      const bodyGeo = new THREE.SphereGeometry(0.13, 32, 24);
+      bodyGeo.scale(1, 1.15, 0.95);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.6 });
       const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.12;
+      body.position.y = 0.13;
       moleGroup.add(body);
 
-      // Hocico beige
-      const snoutGeo = new THREE.SphereGeometry(0.065, 16, 12);
-      snoutGeo.scale(1, 0.7, 1.2);
-      const snoutMat = new THREE.MeshStandardMaterial({ color: 0xe8cfb8, roughness: 0.7 });
+      const snoutGeo = new THREE.SphereGeometry(0.065, 20, 16);
+      snoutGeo.scale(1, 0.75, 1.2);
+      const snoutMat = new THREE.MeshStandardMaterial({ color: 0xf5e0c3, roughness: 0.5 });
       const snout = new THREE.Mesh(snoutGeo, snoutMat);
-      snout.position.set(0, 0.12, 0.08);
+      snout.position.set(0, 0.11, 0.075);
       moleGroup.add(snout);
 
-      // Naricita rosa tierno
-      const noseGeo = new THREE.SphereGeometry(0.022, 12, 12);
-      const noseMat = new THREE.MeshStandardMaterial({ color: 0xf48fb1 });
+      const noseGeo = new THREE.SphereGeometry(0.022, 14, 14);
+      const noseMat = new THREE.MeshStandardMaterial({ color: 0xf48fb1, roughness: 0.3 });
       const nose = new THREE.Mesh(noseGeo, noseMat);
-      nose.position.set(0, 0.14, 0.15);
+      nose.position.set(0, 0.13, 0.14);
       moleGroup.add(nose);
 
-      // Ojos negros brillantes con destello lindo
-      const eyeGeo = new THREE.SphereGeometry(0.018, 12, 12);
-      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
+      const eyeGeo = new THREE.SphereGeometry(0.018, 14, 14);
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
 
       const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeL.position.set(-0.045, 0.18, 0.1);
+      eyeL.position.set(-0.045, 0.17, 0.095);
       moleGroup.add(eyeL);
 
       const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeR.position.set(0.045, 0.18, 0.1);
+      eyeR.position.set(0.045, 0.17, 0.095);
       moleGroup.add(eyeR);
 
-      // Mejillas rosaditas
-      const cheekGeo = new THREE.SphereGeometry(0.02, 12, 12);
-      const cheekMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.6 });
+      const shineGeo = new THREE.SphereGeometry(0.006, 8, 8);
+      const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+      const shineL = new THREE.Mesh(shineGeo, shineMat);
+      shineL.position.set(-0.042, 0.176, 0.11);
+      moleGroup.add(shineL);
+
+      const shineR = new THREE.Mesh(shineGeo, shineMat);
+      shineR.position.set(0.048, 0.176, 0.11);
+      moleGroup.add(shineR);
+
+      const cheekGeo = new THREE.SphereGeometry(0.018, 12, 12);
+      const cheekMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.55 });
 
       const cheekL = new THREE.Mesh(cheekGeo, cheekMat);
-      cheekL.position.set(-0.07, 0.14, 0.1);
+      cheekL.position.set(-0.07, 0.13, 0.09);
       moleGroup.add(cheekL);
 
       const cheekR = new THREE.Mesh(cheekGeo, cheekMat);
-      cheekR.position.set(0.07, 0.14, 0.1);
+      cheekR.position.set(0.07, 0.13, 0.09);
       moleGroup.add(cheekR);
 
-      // Orejitas redondas
-      const earGeo = new THREE.SphereGeometry(0.028, 12, 12);
-      const earMat = new THREE.MeshStandardMaterial({ color: 0x7c523e });
+      const helmetGeo = new THREE.SphereGeometry(0.12, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2.2);
+      const helmetMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3, metalness: 0.2 });
+      const helmet = new THREE.Mesh(helmetGeo, helmetMat);
+      helmet.position.set(0, 0.13, 0);
+      helmet.rotation.x = -0.15;
+      moleGroup.add(helmet);
 
-      const earL = new THREE.Mesh(earGeo, earMat);
-      earL.position.set(-0.11, 0.21, 0.02);
-      moleGroup.add(earL);
+      const handGeo = new THREE.SphereGeometry(0.03, 12, 12);
+      handGeo.scale(1.2, 0.6, 1);
+      const handMat = new THREE.MeshStandardMaterial({ color: 0xf5e0c3, roughness: 0.6 });
 
-      const earR = new THREE.Mesh(earGeo, earMat);
-      earR.position.set(0.11, 0.21, 0.02);
-      moleGroup.add(earR);
+      const handL = new THREE.Mesh(handGeo, handMat);
+      handL.position.set(-0.1, 0.04, 0.08);
+      moleGroup.add(handL);
 
-      moleGroup.position.y = -0.3; // Oculto al inicio dentro del hoyo
+      const handR = new THREE.Mesh(handGeo, handMat);
+      handR.position.set(0.1, 0.04, 0.08);
+      moleGroup.add(handR);
+
+      moleGroup.position.y = -0.35;
       return moleGroup;
     }
 
     function createBombMesh() {
       const bombGroup = new THREE.Group();
-      const bodyGeo = new THREE.SphereGeometry(0.11, 24, 24);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3, metalness: 0.5 });
+      
+      const bodyGeo = new THREE.SphereGeometry(0.12, 24, 24);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2, metalness: 0.6 });
       const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.11;
+      body.position.y = 0.12;
       bombGroup.add(body);
 
-      const fuseGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.06);
+      const fuseGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.07);
       const fuseMat = new THREE.MeshBasicMaterial({ color: 0xd4a373 });
       const fuse = new THREE.Mesh(fuseGeo, fuseMat);
-      fuse.position.set(0, 0.22, 0);
-      fuse.rotation.z = 0.2;
+      fuse.position.set(0, 0.24, 0);
+      fuse.rotation.z = 0.25;
       bombGroup.add(fuse);
 
-      // Chispa encendida arriba de la mecha
-      const sparkGeo = new THREE.SphereGeometry(0.02, 8, 8);
+      const sparkGeo = new THREE.SphereGeometry(0.022, 8, 8);
       const sparkMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
       const spark = new THREE.Mesh(sparkGeo, sparkMat);
-      spark.position.set(0.015, 0.25, 0);
+      spark.position.set(0.02, 0.28, 0);
       bombGroup.add(spark);
 
-      bombGroup.position.y = -0.3;
+      bombGroup.position.y = -0.35;
       return bombGroup;
     }
 
@@ -584,7 +621,7 @@
 
       const mesh = isBomb ? createBombMesh() : createMoleMesh();
       const pos = holePositions[selected.idx];
-      mesh.position.set(pos.x, -0.3, pos.z);
+      mesh.position.set(pos.x, -0.35, pos.z);
       groundGroup.add(mesh);
 
       sound.playPop();
@@ -648,14 +685,14 @@
       activeElements.forEach((el, index) => {
         if (el.state === 'rising') {
           el.progress += 0.08;
-          el.mesh.position.y = THREE.MathUtils.lerp(-0.3, 0, el.progress);
+          el.mesh.position.y = THREE.MathUtils.lerp(-0.35, 0, el.progress);
           if (el.progress >= 1) {
             el.state = 'waiting';
             setTimeout(() => { el.state = 'lowering'; el.progress = 0; }, 1000 - level * 100);
           }
         } else if (el.state === 'lowering') {
           el.progress += 0.08;
-          el.mesh.position.y = THREE.MathUtils.lerp(0, -0.3, el.progress);
+          el.mesh.position.y = THREE.MathUtils.lerp(0, -0.35, el.progress);
           if (el.progress >= 1) {
             groundGroup.remove(el.mesh);
             activeElements.splice(index, 1);
