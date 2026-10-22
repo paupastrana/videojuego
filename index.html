@@ -255,7 +255,7 @@ function createBombMesh() {
 // ---------- Modo vista previa (sin WebXR) ----------
 function startPreviewMode(arButton) {
   fallbackMode = true;
-  arButton.textContent = '📱 Abrir en Needle Go (AR en iPhone)';
+  arButton.textContent = 'Abrir en Needle Go (AR en iPhone)';
   scene.background = new THREE.Color(0x1e293b);
   // 🔧 FIX: no agrandar el tablero en preview; mantener BOARD_SCALE
   groundGroup.scale.setScalar(BOARD_SCALE);
@@ -312,7 +312,7 @@ function onXRSessionEnd() {
   $('gameover-modal').classList.add('hidden');
   setBanner('Pulsa "Iniciar AR" para volver a jugar');
   const b = $('start-ar-btn');
-  b.style.display = ''; b.disabled = false; b.textContent = '📱 Iniciar realidad aumentada';
+  b.style.display = ''; b.disabled = false; b.textContent = 'Iniciar realidad aumentada';
 }
 
 function onXRSelect() {
