@@ -33,7 +33,7 @@
     <div class="hud-card"><div class="hud-title">NIVEL</div><div id="level-val" class="hud-value" style="color:#38bdf8">1</div></div>
     <div class="hud-card"><div class="hud-title">TIEMPO</div><div id="time-val" class="hud-value" style="color:#f43f5e">30s</div></div>
   </div>
-  <div id="scan-banner" class="scan-banner">📱 Pulsa "Iniciar AR" y mueve el teléfono para detectar una superficie</div>
+  <div id="scan-banner" class="scan-banner"> Pulsa "Iniciar AR" y mueve el teléfono para detectar una superficie</div>
 </div>
 
 <div id="gameover-modal" class="modal-overlay hidden">
@@ -117,7 +117,7 @@ function init() {
   const arButton = document.createElement('button');
   arButton.id = 'start-ar-btn';
   arButton.type = 'button';
-  arButton.textContent = '📱 Iniciar realidad aumentada';
+  arButton.textContent = ' Iniciar realidad aumentada';
   arButton.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000;padding:14px 20px;border-radius:14px;border:0;background:#16a34a;color:#fff;font:700 16px Fredoka,sans-serif;white-space:nowrap;';
   arButton.addEventListener('click', async () => {
     if (!navigator.xr || !navigator.xr.requestSession) {
