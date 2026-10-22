@@ -42,7 +42,7 @@
     border:3px solid #ffd23f; border-radius:50%; box-shadow:0 0 10px rgba(0,0,0,.8); pointer-events:auto; }
 
   #hitButton { position:fixed; right:22px; bottom:calc(24px + env(safe-area-inset-bottom,0px)); z-index:15; width:100px; height:100px;
-    border-radius:28px; border:4px solid #fff; font-size:44px; background:linear-gradient(180deg,#ffe066,#e08a00);
+    border-radius:28px; border:4px solid #fff; font-size:15px; font-weight:900; letter-spacing:.5px; color:#3b2400; background:linear-gradient(180deg,#ffe066,#e08a00);
     box-shadow:0 8px 0 #8a5200, 0 12px 25px rgba(0,0,0,.5); cursor:pointer; user-select:none; }
   #hitButton:active { transform:translateY(6px); box-shadow:0 2px 0 #8a5200; }
   #hitButton small { display:block; font-size:11px; font-weight:900; color:#3b2400; }
@@ -50,6 +50,13 @@
   #message { position:fixed; left:50%; top:20%; transform:translateX(-50%); z-index:18; padding:12px 22px; border-radius:999px;
     background:rgba(20,40,10,.88); border:2px solid #ffd23f; font-size:18px; font-weight:900; opacity:0; pointer-events:none; transition:opacity .2s; white-space:nowrap; }
   #message.show { opacity:1; }
+  .float-text { position:fixed; z-index:19; transform:translate(-50%,-50%); font-size:32px; font-weight:900; pointer-events:none;
+    text-shadow:0 3px 0 rgba(0,0,0,.75), 0 0 14px rgba(0,0,0,.6); animation:floatUp .9s ease-out forwards; white-space:nowrap; }
+  @keyframes floatUp {
+    0%   { opacity:0; transform:translate(-50%,-30%) scale(.6); }
+    15%  { opacity:1; transform:translate(-50%,-60%) scale(1.2); }
+    100% { opacity:0; transform:translate(-50%,-230%) scale(1); }
+  }
   #flash { position:fixed; inset:0; z-index:17; background:#ff2a00; opacity:0; pointer-events:none; transition:opacity .35s; }
   #flash.on { opacity:.55; transition:none; }
 
@@ -113,7 +120,6 @@
     <div class="hud-card"><span class="hud-label">Puntos</span><span id="scoreValue" class="hud-value">0</span></div>
     <div class="hud-card"><span class="hud-label">Nivel</span><span id="levelValue" class="hud-value">1</span></div>
     <div class="hud-card"><span class="hud-label">Vidas</span><span id="livesValue" class="hud-value">❤️❤️❤️</span></div>
-    <div class="hud-card"><span class="hud-label">Racha</span><span id="streakValue" class="hud-value">0</span></div>
     <div id="timeCard" class="hud-card"><span class="hud-label">Tiempo</span><span id="timeValue" class="hud-value">60</span></div>
   </div>
 </div>
@@ -122,7 +128,7 @@
 <div id="message"></div>
 <div id="flash"></div>
 
-<button id="hitButton" class="hidden">🔨<small>APLASTAR</small></button>
+<button id="hitButton" class="hidden">APLASTAR</button>
 
 <!-- GAME OVER -->
 <section id="gameOverScreen" class="screen hidden">
@@ -132,8 +138,7 @@
     <div class="stats">
       <div class="stat"><div id="finalScore" class="stat-number">0</div><div class="stat-label">Puntos</div></div>
       <div class="stat"><div id="finalLevel" class="stat-number">1</div><div class="stat-label">Nivel</div></div>
-      <div class="stat"><div id="finalKills" class="stat-number">0</div><div class="stat-label">Topos</div></div>
-      <div class="stat"><div id="finalBestStreak" class="stat-number">0</div><div class="stat-label">Mejor racha</div></div>
+      <div class="stat" style="grid-column:span 2"><div id="finalKills" class="stat-number">0</div><div class="stat-label">Topos aplastados</div></div>
     </div>
     <button id="restartButton" class="btn">JUGAR DE NUEVO</button>
     <button id="menuButton" class="btn btn-alt">VOLVER AL MENÚ</button>
@@ -153,7 +158,7 @@ window.THREE = window.THREE || AFRAME.THREE;
 
 /* ================= ESTADO ================= */
 const GAME = {
-  noCamera:false, running:false, score:0, level:1, lives:3, kills:0, streak:0, bestStreak:0,
+  noCamera:false, running:false, score:0, level:1, lives:3, kills:0, 
   lastSpawn:0, startTime:0, timeLeft:60, slots:[]   // un elemento por hoyo: { el, kind, timer } o null
 };
 
@@ -476,6 +481,27 @@ function golpear() {
   if (best) resolverGolpe(best);
 }
 
+/* Texto que sube flotando desde encima del topo/bomba golpeado */
+function floatText(el, text, color) {
+  try {
+    const sceneEl = $("scene"), cam = sceneEl.camera;
+    if (!cam || !sceneEl.canvas) return;
+    const v = new THREE.Vector3();
+    el.object3D.getWorldPosition(v);
+    v.y += 0.95;
+    v.project(cam);
+    const rect = sceneEl.canvas.getBoundingClientRect();
+    const d = document.createElement("div");
+    d.className = "float-text";
+    d.textContent = text;
+    d.style.color = color;
+    d.style.left = ((v.x + 1) / 2 * rect.width + rect.left) + "px";
+    d.style.top = ((1 - v.y) / 2 * rect.height + rect.top) + "px";
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), 900);
+  } catch (e) {}
+}
+
 function resolverGolpe(el) {
   const idx = parseInt(el.dataset.slot, 10);
   const s = GAME.slots[idx];
@@ -485,20 +511,14 @@ function resolverGolpe(el) {
 
   if (s.kind === "mole") {
     playMole();
-    GAME.streak++;
-    GAME.bestStreak = Math.max(GAME.bestStreak, GAME.streak);
     GAME.kills++;
-
-    let points = 10, bonus = 0;
-    if (GAME.streak % 10 === 0) bonus = 20;
-    else if (GAME.streak % 5 === 0) bonus = 10;
-    points += bonus;
+    const points = 10;
     GAME.score += points;
+    floatText(el, "+" + points, "#ffd23f");
 
     /* Aplastado: se achata */
     s.pop.removeAttribute("animation__up");
     s.pop.setAttribute("animation__squash", { property: "scale", to: "1.5 0.1 1.5", dur: 120, easing: "easeOutQuad" });
-    showMessage(bonus ? `🔥 RACHA x${GAME.streak}  +${bonus}` : `+${points}`);
 
     setTimeout(() => removeSlot(idx), 260);
 
@@ -506,9 +526,8 @@ function resolverGolpe(el) {
     /* Bomba: explota y pierdes una vida */
     playBomb();
     GAME.lives--;
-    GAME.streak = 0;
     flashRed();
-    showMessage("💥 ¡BOMBA!  -1 vida");
+    floatText(el, "💥 -1 ❤️", "#ff6b5a");
 
     const boom = document.createElement("a-entity");
     boom.setAttribute("geometry", { primitive: "sphere", radius: 0.3 });
@@ -530,7 +549,6 @@ function updateHUD() {
   $("scoreValue").textContent = GAME.score;
   $("levelValue").textContent = GAME.level;
   $("livesValue").textContent = "❤️".repeat(Math.max(0, GAME.lives)) || "💀";
-  $("streakValue").textContent = "🔥 " + GAME.streak;
   $("timeValue").textContent = GAME.timeLeft;
   $("timeCard").classList.toggle("low", GAME.timeLeft <= 10);
 }
@@ -538,7 +556,7 @@ function updateHUD() {
 /* ================= INICIO / FIN ================= */
 function startGame() {
   GAME.running = true;
-  GAME.score = 0; GAME.level = 1; GAME.lives = 3; GAME.kills = 0; GAME.streak = 0; GAME.bestStreak = 0;
+  GAME.score = 0; GAME.level = 1; GAME.lives = 3; GAME.kills = 0;
   GAME.startTime = performance.now() + 600;
   GAME.timeLeft = GAME_SECONDS;
   GAME.lastSpawn = GAME.startTime;
@@ -565,7 +583,6 @@ function endGame(reason) {
   $("finalScore").textContent = GAME.score;
   $("finalLevel").textContent = GAME.level;
   $("finalKills").textContent = GAME.kills;
-  $("finalBestStreak").textContent = GAME.bestStreak;
   setTimeout(() => gameOverScreen.classList.remove("hidden"), 500);
 }
 
