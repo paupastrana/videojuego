@@ -2,8 +2,14 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Whack-a-Mole AR - Anclaje Fijo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Whack-a-Mole AR - A-Frame & AR.js</title>
+
+  <!-- Import A-Frame 1.4.0 -->
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <!-- Import AR.js for A-Frame -->
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
 
@@ -21,36 +27,21 @@
       overflow: hidden;
       font-family: 'Fredoka', cursive, sans-serif;
       background-color: #000000;
-      color: #ffffff;
     }
 
-    #webcam {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      z-index: 0;
+    /* Ocultar elementos emergentes o logos de A-Frame */
+    .a-enter-vr, .a-enter-ar {
+      display: none !important;
     }
 
-    #canvas-container {
-      width: 100%;
-      height: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 1;
-      pointer-events: auto;
-    }
-
+    /* Interfaz de Usuario Overlay */
     .ui-layer {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      z-index: 10;
+      z-index: 9999;
       pointer-events: none;
       display: flex;
       flex-direction: column;
@@ -77,6 +68,8 @@
       border-radius: 16px;
       padding: 8px 14px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      min-width: 80px;
+      text-align: center;
     }
 
     .hud-title {
@@ -98,13 +91,15 @@
       backdrop-filter: blur(10px);
       border: 2px solid #22c55e;
       border-radius: 25px;
-      padding: 12px 24px;
+      padding: 14px 24px;
       color: #f0fdf4;
       font-size: 1rem;
       text-align: center;
       box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
       animation: pulseBanner 2s infinite ease-in-out;
-      margin-bottom: 20px;
+      margin-bottom: 30px;
+      pointer-events: auto;
+      cursor: pointer;
     }
 
     @keyframes pulseBanner {
@@ -121,7 +116,7 @@
       background: rgba(15, 23, 42, 0.85);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
-      z-index: 20;
+      z-index: 10000;
       display: flex;
       justify-content: center;
       align-items: center;
@@ -165,7 +160,7 @@
       font-size: 1.8rem;
       font-weight: 700;
       pointer-events: none;
-      z-index: 15;
+      z-index: 10001;
       animation: floatUp 0.8s forwards ease-out;
     }
 
@@ -174,14 +169,10 @@
       100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
     }
   </style>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
-  <video id="webcam" autoplay playsinline muted></video>
-  <div id="canvas-container"></div>
-
+  <!-- Capa UI -->
   <div class="ui-layer">
     <div id="hud-header" class="hud-header hidden">
       <div class="hud-card">
@@ -199,10 +190,11 @@
     </div>
 
     <div id="scan-banner" class="scan-banner">
-      📷 Escanea tu entorno y TOCA LA PANTALLA para fijar el juego en ese lugar
+      📍 Apunta con la cámara y TOCA LA PANTALLA para fijar el terreno de juego
     </div>
   </div>
 
+  <!-- Modal Game Over -->
   <div id="gameover-modal" class="modal-overlay hidden interactive">
     <div class="modal-card">
       <h2 style="font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px;">¡TIEMPO AGOTADO! ⏰</h2>
@@ -217,14 +209,41 @@
     </div>
   </div>
 
+  <!-- Escena A-Frame con AR.js -->
+  <a-scene 
+    embedded 
+    arjs="sourceType: webcam; debugUIEnabled: false; trackingMethod: best;"
+    renderer="precision: medium; antialias: true; alpha: true;"
+    vr-mode-ui="enabled: false">
+
+    <a-entity id="camera" camera look-controls raycaster="objects: .clickable" cursor="rayOrigin: mouse"></a-entity>
+
+    <!-- Terreno Principal (Oculto hasta hacer Tap) -->
+    <a-entity id="game-ground" position="0 -0.5 -1.8" visible="false">
+      <!-- Base de Jardín Verde -->
+      <a-box position="0 -0.05 0" width="1.8" height="0.1" depth="1.3" color="#48bb78" material="roughness: 0.6"></a-box>
+    </a-entity>
+
+  </a-scene>
+
   <script>
+    // Sintetizador Web Audio API para Efectos de Sonido
     class SoundFX {
       constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.ctx = null;
+      }
+
+      initCtx() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
       }
 
       playPop() {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
+        this.initCtx();
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'sine';
@@ -239,12 +258,12 @@
       }
 
       playHit() {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
+        this.initCtx();
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(160, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(40, this.ctx.currentTime + 0.15);
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.15);
         gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
         gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.15);
         osc.connect(gain);
@@ -254,7 +273,7 @@
       }
 
       playExplosion() {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
+        this.initCtx();
         const bufferSize = this.ctx.sampleRate * 0.3;
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         const data = buffer.getChannelData(0);
@@ -275,7 +294,7 @@
       }
 
       playLevelUp() {
-        if (this.ctx.state === 'suspended') this.ctx.resume();
+        this.initCtx();
         const now = this.ctx.currentTime;
         [440, 554.37, 659.25, 880].forEach((freq, idx) => {
           const osc = this.ctx.createOscillator();
@@ -293,299 +312,222 @@
 
     const sound = new SoundFX();
 
-    let scene, camera, renderer, raycaster, mouse;
-    let reticleMesh, isPlaced = false;
-    let groundGroup;
-    let holes = [];
-    let activeElements = [];
-    let score = 0, level = 1, timeLeft = 30;
-    let gameActive = false, gameTimerInterval = null, spawnTimeout = null;
-
-    // Sensores del dispositivo para la cámara fija
-    let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
-    let initialAlpha = null;
+    // Estado del Juego
+    let isPlaced = false;
+    let gameActive = false;
+    let score = 0;
+    let level = 1;
+    let timeLeft = 30;
+    let gameTimerInterval = null;
+    let spawnTimeout = null;
 
     const holePositions = [
       { x: -0.5, z: -0.3 }, { x: 0, z: -0.3 }, { x: 0.5, z: -0.3 },
       { x: -0.5, z: 0.3 },  { x: 0, z: 0.3 },  { x: 0.5, z: 0.3 }
     ];
 
-    const virtualFloorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    let holesEntities = [];
+    let activeElements = [];
 
-    startWebcam();
-    init();
-    initSensors();
-    animate();
-
-    function startWebcam() {
-      const video = document.getElementById('webcam');
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-          .then(stream => { video.srcObject = stream; })
-          .catch(err => { console.warn("Cámara no disponible:", err); });
-      }
-    }
-
-    function initSensors() {
-      if (window.DeviceOrientationEvent) {
-        window.addEventListener('deviceorientation', (e) => {
-          if (e.alpha !== null) {
-            if (initialAlpha === null) initialAlpha = e.alpha;
-            deviceAlpha = THREE.MathUtils.degToRad(e.alpha - initialAlpha);
-            deviceBeta = THREE.MathUtils.degToRad(e.beta || 0);
-            deviceGamma = THREE.MathUtils.degToRad(e.gamma || 0);
-          }
-        }, true);
-      }
-    }
-
-    function init() {
-      const container = document.getElementById('canvas-container');
-
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-      camera.position.set(0, 2.2, 2.2);
-      camera.lookAt(0, 0, 0);
-
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setClearColor(0x000000, 0);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-      renderer.shadowMap.enabled = true;
-      container.appendChild(renderer.domElement);
-
-      scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-      const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
-      dirLight.position.set(2, 4, 3);
-      scene.add(dirLight);
-
-      raycaster = new THREE.Raycaster();
-      mouse = new THREE.Vector2();
-
-      const ringGeo = new THREE.RingGeometry(0.25, 0.32, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide });
-      reticleMesh = new THREE.Mesh(ringGeo, ringMat);
-      reticleMesh.rotation.x = -Math.PI / 2;
-      reticleMesh.position.y = 0.01;
-      scene.add(reticleMesh);
-
+    window.addEventListener('DOMContentLoaded', () => {
       buildEnvironment();
 
-      window.addEventListener('resize', onWindowResize);
-      window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerdown', onPointerDown);
+      // Tap para fijar en el espacio 3D
+      window.addEventListener('click', (e) => {
+        // Evitar toques en modal o UI
+        if (e.target.closest('.interactive') || e.target.closest('.scan-banner')) return;
+
+        if (!isPlaced) {
+          anchorGroundInFrontOfCamera();
+        }
+      });
+
       document.getElementById('restart-btn').addEventListener('click', resetPlacement);
+    });
+
+    // Ancla el terreno en la posición 3D real frente a la cámara en el momento del tap
+    function anchorGroundInFrontOfCamera() {
+      const groundEl = document.getElementById('game-ground');
+      const cameraEl = document.getElementById('camera');
+
+      // Obtener posición y dirección actual de la cámara
+      const cameraObj = cameraEl.object3D;
+      const worldPos = new THREE.Vector3();
+      const worldDir = new THREE.Vector3();
+
+      cameraObj.getWorldPosition(worldPos);
+      cameraObj.getWorldDirection(worldDir);
+
+      // Calcular la posición 1.5m adelante y 0.5m abajo en el espacio 3D real
+      const targetPos = new THREE.Vector3()
+        .copy(worldPos)
+        .add(worldDir.multiplyScalar(-1.6));
+      targetPos.y -= 0.4;
+
+      groundEl.object3D.position.copy(targetPos);
+      
+      // Orientar el terreno hacia la cámara manteniendo el suelo plano
+      groundEl.object3D.rotation.set(0, cameraObj.rotation.y, 0);
+
+      groundEl.setAttribute('visible', 'true');
+      isPlaced = true;
+
+      document.getElementById('scan-banner').classList.add('hidden');
+      document.getElementById('hud-header').classList.remove('hidden');
+
+      startGame();
     }
 
     function buildEnvironment() {
-      groundGroup = new THREE.Group();
-
-      const baseGeo = new THREE.BoxGeometry(1.82, 0.1, 1.32);
-      const baseMat = new THREE.MeshStandardMaterial({ color: 0x48bb78, roughness: 0.6 });
-      const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      baseMesh.position.y = -0.05;
-      groundGroup.add(baseMesh);
+      const groundEl = document.getElementById('game-ground');
 
       holePositions.forEach((pos, idx) => {
-        const holeGroup = new THREE.Group();
-        holeGroup.position.set(pos.x, 0, pos.z);
+        // Contenedor del Hoyo
+        const holeContainer = document.createElement('a-entity');
+        holeContainer.setAttribute('position', `${pos.x} 0.001 ${pos.z}`);
 
-        const ringGeo = new THREE.RingGeometry(0.14, 0.18, 32);
-        const ringMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide });
-        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-        ringMesh.rotation.x = -Math.PI / 2;
-        ringMesh.position.y = 0.002;
-        holeGroup.add(ringMesh);
+        // Borde del Hoyo (Tierra)
+        const ring = document.createElement('a-ring');
+        ring.setAttribute('radius-inner', '0.13');
+        ring.setAttribute('radius-outer', '0.17');
+        ring.setAttribute('rotation', '-90 0 0');
+        ring.setAttribute('color', '#5c4033');
+        ring.setAttribute('material', 'roughness: 0.8');
+        holeContainer.appendChild(ring);
 
-        const innerGeo = new THREE.CircleGeometry(0.14, 32);
-        const innerMat = new THREE.MeshBasicMaterial({ color: 0x0f0a06 });
-        const innerMesh = new THREE.Mesh(innerGeo, innerMat);
-        innerMesh.rotation.x = -Math.PI / 2;
-        innerMesh.position.y = 0.001;
-        holeGroup.add(innerMesh);
+        // Fondo del Hoyo Oscuro
+        const inner = document.createElement('a-circle');
+        inner.setAttribute('radius', '0.13');
+        inner.setAttribute('rotation', '-90 0 0');
+        inner.setAttribute('color', '#0f0a06');
+        inner.setAttribute('position', '0 -0.001 0');
+        holeContainer.appendChild(inner);
 
-        groundGroup.add(holeGroup);
-        holes.push({ group: holeGroup, active: idx < 3 });
-        if (idx >= 3) holeGroup.visible = false;
+        groundEl.appendChild(holeContainer);
+
+        const isActive = idx < 3;
+        if (!isActive) holeContainer.setAttribute('visible', 'false');
+
+        holesEntities.push({
+          entity: holeContainer,
+          active: isActive,
+          pos: pos
+        });
+      });
+    }
+
+    // Crear Entidad Topo Kawaii 3D
+    function createMoleEntity() {
+      const moleGroup = document.createElement('a-entity');
+
+      // Cuerpo café cálido (#8b5a2b)
+      const body = document.createElement('a-sphere');
+      body.setAttribute('radius', '0.12');
+      body.setAttribute('scale', '1 1.15 0.95');
+      body.setAttribute('color', '#8b5a2b');
+      body.setAttribute('position', '0 0.12 0');
+      moleGroup.appendChild(body);
+
+      // Hocico beige (#f5e0c3)
+      const snout = document.createElement('a-sphere');
+      snout.setAttribute('radius', '0.06');
+      snout.setAttribute('scale', '1 0.75 1.2');
+      snout.setAttribute('color', '#f5e0c3');
+      snout.setAttribute('position', '0 0.1 0.07');
+      moleGroup.appendChild(snout);
+
+      // Nariz rosa (#f48fb1)
+      const nose = document.createElement('a-sphere');
+      nose.setAttribute('radius', '0.02');
+      nose.setAttribute('color', '#f48fb1');
+      nose.setAttribute('position', '0 0.12 0.13');
+      moleGroup.appendChild(nose);
+
+      // Ojos Negros con Destellos
+      [-0.045, 0.045].forEach(x => {
+        const eye = document.createElement('a-sphere');
+        eye.setAttribute('radius', '0.018');
+        eye.setAttribute('color', '#111111');
+        eye.setAttribute('position', `${x} 0.16 0.09`);
+        moleGroup.appendChild(eye);
+
+        const shine = document.createElement('a-sphere');
+        shine.setAttribute('radius', '0.006');
+        shine.setAttribute('color', '#ffffff');
+        shine.setAttribute('position', `${x + 0.003} 0.165 0.105`);
+        moleGroup.appendChild(shine);
       });
 
-      groundGroup.visible = false;
-      scene.add(groundGroup);
+      // Casquito Amarillo (#facc15)
+      const helmet = document.createElement('a-sphere');
+      helmet.setAttribute('radius', '0.11');
+      helmet.setAttribute('theta-length', '90');
+      helmet.setAttribute('color', '#facc15');
+      helmet.setAttribute('position', '0 0.13 0');
+      helmet.setAttribute('rotation', '-10 0 0');
+      moleGroup.appendChild(helmet);
+
+      // Manitas apoyadas
+      [-0.09, 0.09].forEach(x => {
+        const hand = document.createElement('a-sphere');
+        hand.setAttribute('radius', '0.028');
+        hand.setAttribute('scale', '1.2 0.6 1');
+        hand.setAttribute('color', '#f5e0c3');
+        hand.setAttribute('position', `${x} 0.03 0.08`);
+        moleGroup.appendChild(hand);
+      });
+
+      // Malla Invisible Interactiva para Click / Tap Preciso
+      const hitBox = document.createElement('a-box');
+      hitBox.setAttribute('width', '0.25');
+      hitBox.setAttribute('height', '0.35');
+      hitBox.setAttribute('depth', '0.25');
+      hitBox.setAttribute('position', '0 0.15 0');
+      hitBox.setAttribute('visible', 'false');
+      hitBox.setAttribute('class', 'clickable');
+      moleGroup.appendChild(hitBox);
+
+      return { moleGroup, hitBox };
     }
 
-    function createMoleMesh() {
-      const moleGroup = new THREE.Group();
+    // Crear Entidad Bomba 3D
+    function createBombEntity() {
+      const bombGroup = document.createElement('a-entity');
 
-      const bodyGeo = new THREE.SphereGeometry(0.13, 32, 24);
-      bodyGeo.scale(1, 1.15, 0.95);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.6 });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.13;
-      moleGroup.add(body);
+      // Cuerpo Negro Mate (#111827)
+      const body = document.createElement('a-sphere');
+      body.setAttribute('radius', '0.11');
+      body.setAttribute('color', '#111827');
+      body.setAttribute('position', '0 0.11 0');
+      bombGroup.appendChild(body);
 
-      const snoutGeo = new THREE.SphereGeometry(0.065, 20, 16);
-      snoutGeo.scale(1, 0.75, 1.2);
-      const snoutMat = new THREE.MeshStandardMaterial({ color: 0xf5e0c3, roughness: 0.5 });
-      const snout = new THREE.Mesh(snoutGeo, snoutMat);
-      snout.position.set(0, 0.11, 0.075);
-      moleGroup.add(snout);
+      // Mecha
+      const fuse = document.createElement('a-cylinder');
+      fuse.setAttribute('radius', '0.008');
+      fuse.setAttribute('height', '0.06');
+      fuse.setAttribute('color', '#d4a373');
+      fuse.setAttribute('position', '0 0.22 0');
+      fuse.setAttribute('rotation', '0 0 15');
+      bombGroup.appendChild(fuse);
 
-      const noseGeo = new THREE.SphereGeometry(0.022, 14, 14);
-      const noseMat = new THREE.MeshStandardMaterial({ color: 0xf48fb1, roughness: 0.3 });
-      const nose = new THREE.Mesh(noseGeo, noseMat);
-      nose.position.set(0, 0.13, 0.14);
-      moleGroup.add(nose);
+      // Chispa encendida (#f59e0b)
+      const spark = document.createElement('a-sphere');
+      spark.setAttribute('radius', '0.02');
+      spark.setAttribute('color', '#f59e0b');
+      spark.setAttribute('position', '0.02 0.25 0');
+      bombGroup.appendChild(spark);
 
-      const eyeGeo = new THREE.SphereGeometry(0.018, 14, 14);
-      const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+      // Malla HitBox
+      const hitBox = document.createElement('a-box');
+      hitBox.setAttribute('width', '0.25');
+      hitBox.setAttribute('height', '0.35');
+      hitBox.setAttribute('depth', '0.25');
+      hitBox.setAttribute('position', '0 0.15 0');
+      hitBox.setAttribute('visible', 'false');
+      hitBox.setAttribute('class', 'clickable');
+      bombGroup.appendChild(hitBox);
 
-      const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeL.position.set(-0.045, 0.17, 0.095);
-      moleGroup.add(eyeL);
-
-      const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-      eyeR.position.set(0.045, 0.17, 0.095);
-      moleGroup.add(eyeR);
-
-      const shineGeo = new THREE.SphereGeometry(0.006, 8, 8);
-      const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-
-      const shineL = new THREE.Mesh(shineGeo, shineMat);
-      shineL.position.set(-0.042, 0.176, 0.11);
-      moleGroup.add(shineL);
-
-      const shineR = new THREE.Mesh(shineGeo, shineMat);
-      shineR.position.set(0.048, 0.176, 0.11);
-      moleGroup.add(shineR);
-
-      const cheekGeo = new THREE.SphereGeometry(0.018, 12, 12);
-      const cheekMat = new THREE.MeshBasicMaterial({ color: 0xf472b6, transparent: true, opacity: 0.55 });
-
-      const cheekL = new THREE.Mesh(cheekGeo, cheekMat);
-      cheekL.position.set(-0.07, 0.13, 0.09);
-      moleGroup.add(cheekL);
-
-      const cheekR = new THREE.Mesh(cheekGeo, cheekMat);
-      cheekR.position.set(0.07, 0.13, 0.09);
-      moleGroup.add(cheekR);
-
-      const helmetGeo = new THREE.SphereGeometry(0.12, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2.2);
-      const helmetMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3, metalness: 0.2 });
-      const helmet = new THREE.Mesh(helmetGeo, helmetMat);
-      helmet.position.set(0, 0.13, 0);
-      helmet.rotation.x = -0.15;
-      moleGroup.add(helmet);
-
-      const handGeo = new THREE.SphereGeometry(0.03, 12, 12);
-      handGeo.scale(1.2, 0.6, 1);
-      const handMat = new THREE.MeshStandardMaterial({ color: 0xf5e0c3, roughness: 0.6 });
-
-      const handL = new THREE.Mesh(handGeo, handMat);
-      handL.position.set(-0.1, 0.04, 0.08);
-      moleGroup.add(handL);
-
-      const handR = new THREE.Mesh(handGeo, handMat);
-      handR.position.set(0.1, 0.04, 0.08);
-      moleGroup.add(handR);
-
-      moleGroup.position.y = -0.35;
-      return moleGroup;
-    }
-
-    function createBombMesh() {
-      const bombGroup = new THREE.Group();
-      
-      const bodyGeo = new THREE.SphereGeometry(0.12, 24, 24);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2, metalness: 0.6 });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.12;
-      bombGroup.add(body);
-
-      const fuseGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.07);
-      const fuseMat = new THREE.MeshBasicMaterial({ color: 0xd4a373 });
-      const fuse = new THREE.Mesh(fuseGeo, fuseMat);
-      fuse.position.set(0, 0.24, 0);
-      fuse.rotation.z = 0.25;
-      bombGroup.add(fuse);
-
-      const sparkGeo = new THREE.SphereGeometry(0.022, 8, 8);
-      const sparkMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
-      const spark = new THREE.Mesh(sparkGeo, sparkMat);
-      spark.position.set(0.02, 0.28, 0);
-      bombGroup.add(spark);
-
-      bombGroup.position.y = -0.35;
-      return bombGroup;
-    }
-
-    function onPointerMove(event) {
-      if (isPlaced) return;
-
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const targetPoint = new THREE.Vector3();
-      raycaster.ray.intersectPlane(virtualFloorPlane, targetPoint);
-
-      if (targetPoint) {
-        reticleMesh.position.copy(targetPoint);
-      }
-    }
-
-    function onPointerDown(event) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-      if (!isPlaced) {
-        // Fijar las coordenadas exactas del punto seleccionado en el espacio 3D
-        groundGroup.position.copy(reticleMesh.position);
-        groundGroup.visible = true;
-        reticleMesh.visible = false;
-        isPlaced = true;
-
-        document.getElementById('scan-banner').classList.add('hidden');
-        document.getElementById('hud-header').classList.remove('hidden');
-
-        startGame();
-        return;
-      }
-
-      if (!gameActive) return;
-
-      raycaster.setFromCamera(mouse, camera);
-      const meshesToIntersect = activeElements.map(el => el.mesh);
-      const intersects = raycaster.intersectObjects(meshesToIntersect, true);
-
-      if (intersects.length > 0) {
-        let hitObject = intersects[0].object;
-        while (hitObject.parent && hitObject.parent !== groundGroup) {
-          hitObject = hitObject.parent;
-        }
-
-        const elementIdx = activeElements.findIndex(el => el.mesh === hitObject);
-        if (elementIdx !== -1) {
-          const el = activeElements[elementIdx];
-
-          if (el.type === 'mole') {
-            sound.playHit();
-            score += 100;
-            showPopup('+100', event.clientX, event.clientY, '#4ade80');
-            checkLevelProgress();
-          } else {
-            sound.playExplosion();
-            score = Math.max(0, score - 150);
-            timeLeft = Math.max(0, timeLeft - 3);
-            showPopup('-150', event.clientX, event.clientY, '#f87171');
-          }
-
-          document.getElementById('score-val').innerText = score;
-          document.getElementById('time-val').innerText = `${timeLeft}s`;
-
-          groundGroup.remove(el.mesh);
-          activeElements.splice(elementIdx, 1);
-        }
-      }
+      return { bombGroup, hitBox };
     }
 
     function startGame() {
@@ -596,12 +538,13 @@
       document.getElementById('time-val').innerText = `${timeLeft}s`;
       document.getElementById('gameover-modal').classList.add('hidden');
 
-      holes.forEach((h, idx) => {
+      holesEntities.forEach((h, idx) => {
         h.active = idx < 3;
-        h.group.visible = idx < 3;
+        h.entity.setAttribute('visible', idx < 3 ? 'true' : 'false');
       });
 
-      activeElements.forEach(el => groundGroup.remove(el.mesh));
+      const groundEl = document.getElementById('game-ground');
+      activeElements.forEach(el => groundEl.removeChild(el.group));
       activeElements = [];
 
       clearInterval(gameTimerInterval);
@@ -625,7 +568,7 @@
     }
 
     function spawnElement() {
-      const availableHoles = holes
+      const availableHoles = holesEntities
         .map((h, idx) => ({ h, idx }))
         .filter(item => item.h.active && !activeElements.some(el => el.holeIdx === item.idx));
 
@@ -634,20 +577,99 @@
       const selected = availableHoles[Math.floor(Math.random() * availableHoles.length)];
       const isBomb = Math.random() < 0.25;
 
-      const mesh = isBomb ? createBombMesh() : createMoleMesh();
-      const pos = holePositions[selected.idx];
-      mesh.position.set(pos.x, -0.35, pos.z);
-      groundGroup.add(mesh);
+      const { moleGroup: group, hitBox } = isBomb ? createBombEntity() : createMoleEntity();
+      const pos = selected.h.pos;
+      
+      // Inicia 100% oculto debajo del hoyo
+      group.setAttribute('position', `${pos.x} -0.35 ${pos.z}`);
+
+      const groundEl = document.getElementById('game-ground');
+      groundEl.appendChild(group);
 
       sound.playPop();
 
-      activeElements.push({
-        mesh: mesh,
+      const elementData = {
+        group: group,
+        hitBox: hitBox,
         type: isBomb ? 'bomb' : 'mole',
         holeIdx: selected.idx,
         state: 'rising',
-        progress: 0
+        progress: 0,
+        posX: pos.x,
+        posZ: pos.z
+      };
+
+      // Evento de Toque / Click directo
+      hitBox.addEventListener('click', (evt) => {
+        evt.stopPropagation();
+        if (!gameActive) return;
+
+        const screenX = evt.detail.intersection ? evt.detail.intersection.point.x : window.innerWidth / 2;
+        const screenY = evt.detail.intersection ? evt.detail.intersection.point.y : window.innerHeight / 2;
+
+        if (elementData.type === 'mole') {
+          sound.playHit();
+          score += 100;
+          showPopup('+100', screenX, screenY, '#4ade80');
+          checkLevelProgress();
+        } else {
+          sound.playExplosion();
+          score = Math.max(0, score - 150);
+          timeLeft = Math.max(0, timeLeft - 3);
+          showPopup('-150', screenX, screenY, '#f87171');
+        }
+
+        document.getElementById('score-val').innerText = score;
+        document.getElementById('time-val').innerText = `${timeLeft}s`;
+
+        // Eliminar del terreno
+        const index = activeElements.indexOf(elementData);
+        if (index > -1) {
+          activeElements.splice(index, 1);
+          groundEl.removeChild(group);
+        }
       });
+
+      activeElements.push(elementData);
+      animateElement(elementData);
+    }
+
+    // Animación Progresiva (Subida y Bajada Suave)
+    function animateElement(el) {
+      if (!gameActive || !activeElements.includes(el)) return;
+
+      const groundEl = document.getElementById('game-ground');
+
+      if (el.state === 'rising') {
+        el.progress += 0.08;
+        const currentY = -0.35 + (0.35 * el.progress);
+        el.group.setAttribute('position', `${el.posX} ${currentY} ${el.posZ}`);
+
+        if (el.progress >= 1) {
+          el.state = 'waiting';
+          setTimeout(() => {
+            el.state = 'lowering';
+            el.progress = 0;
+            animateElement(el);
+          }, Math.max(400, 1000 - level * 100));
+        } else {
+          requestAnimationFrame(() => animateElement(el));
+        }
+      } else if (el.state === 'lowering') {
+        el.progress += 0.08;
+        const currentY = 0 - (0.35 * el.progress);
+        el.group.setAttribute('position', `${el.posX} ${currentY} ${el.posZ}`);
+
+        if (el.progress >= 1) {
+          const index = activeElements.indexOf(el);
+          if (index > -1) {
+            activeElements.splice(index, 1);
+            groundEl.removeChild(el.group);
+          }
+        } else {
+          requestAnimationFrame(() => animateElement(el));
+        }
+      }
     }
 
     function checkLevelProgress() {
@@ -657,32 +679,32 @@
         document.getElementById('level-val').innerText = level;
         sound.playLevelUp();
 
-        const inactiveHole = holes.find(h => !h.active);
+        const inactiveHole = holesEntities.find(h => !h.active);
         if (inactiveHole) {
           inactiveHole.active = true;
-          inactiveHole.group.visible = true;
+          inactiveHole.entity.setAttribute('visible', 'true');
         }
       }
-    }
-
-    function resetPlacement() {
-      isPlaced = false;
-      groundGroup.visible = false;
-      reticleMesh.visible = true;
-      document.getElementById('gameover-modal').classList.add('hidden');
-      document.getElementById('hud-header').classList.add('hidden');
-      document.getElementById('scan-banner').classList.remove('hidden');
     }
 
     function showPopup(text, x, y, color) {
       const pop = document.createElement('div');
       pop.className = 'score-popup';
       pop.innerText = text;
-      pop.style.left = `${x - 20}px`;
-      pop.style.top = `${y - 20}px`;
+      pop.style.left = `${window.innerWidth / 2 - 30}px`;
+      pop.style.top = `${window.innerHeight / 2 - 30}px`;
       pop.style.color = color;
       document.body.appendChild(pop);
       setTimeout(() => pop.remove(), 800);
+    }
+
+    function resetPlacement() {
+      isPlaced = false;
+      gameActive = false;
+      document.getElementById('game-ground').setAttribute('visible', 'false');
+      document.getElementById('gameover-modal').classList.add('hidden');
+      document.getElementById('hud-header').classList.add('hidden');
+      document.getElementById('scan-banner').classList.remove('hidden');
     }
 
     function endGame() {
@@ -692,41 +714,6 @@
 
       document.getElementById('final-score').innerText = score;
       document.getElementById('gameover-modal').classList.remove('hidden');
-    }
-
-    function animate() {
-      requestAnimationFrame(animate);
-
-      // Una vez colocado el terreno, orientar la cámara con los sensores del celular
-      if (isPlaced && deviceAlpha !== 0) {
-        camera.rotation.y = -deviceAlpha;
-      }
-
-      activeElements.forEach((el, index) => {
-        if (el.state === 'rising') {
-          el.progress += 0.08;
-          el.mesh.position.y = THREE.MathUtils.lerp(-0.35, 0, el.progress);
-          if (el.progress >= 1) {
-            el.state = 'waiting';
-            setTimeout(() => { el.state = 'lowering'; el.progress = 0; }, 1000 - level * 100);
-          }
-        } else if (el.state === 'lowering') {
-          el.progress += 0.08;
-          el.mesh.position.y = THREE.MathUtils.lerp(0, -0.35, el.progress);
-          if (el.progress >= 1) {
-            groundGroup.remove(el.mesh);
-            activeElements.splice(index, 1);
-          }
-        }
-      });
-
-      renderer.render(scene, camera);
-    }
-
-    function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
     }
   </script>
 </body>
