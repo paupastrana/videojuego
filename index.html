@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Whack-a-Mole AR - Hoyos Limpios</title>
+  <title>Whack-a-Mole AR - Anclaje Fijo</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
 
@@ -199,7 +199,7 @@
     </div>
 
     <div id="scan-banner" class="scan-banner">
-      📷 Escanea tu entorno y TOCA LA PANTALLA para colocar el juego
+      📷 Escanea tu entorno y TOCA LA PANTALLA para fijar el juego en ese lugar
     </div>
   </div>
 
@@ -213,7 +213,7 @@
         <div id="final-score" style="font-size: 2.5rem; font-weight: 700; color: #facc15;">0</div>
       </div>
 
-      <button id="restart-btn" class="btn-action">Jugar de Nuevo</button>
+      <button id="restart-btn" class="btn-action">Reubicar y Jugar de Nuevo</button>
     </div>
   </div>
 
@@ -301,6 +301,10 @@
     let score = 0, level = 1, timeLeft = 30;
     let gameActive = false, gameTimerInterval = null, spawnTimeout = null;
 
+    // Sensores del dispositivo para la cámara fija
+    let deviceAlpha = 0, deviceBeta = 0, deviceGamma = 0;
+    let initialAlpha = null;
+
     const holePositions = [
       { x: -0.5, z: -0.3 }, { x: 0, z: -0.3 }, { x: 0.5, z: -0.3 },
       { x: -0.5, z: 0.3 },  { x: 0, z: 0.3 },  { x: 0.5, z: 0.3 }
@@ -310,6 +314,7 @@
 
     startWebcam();
     init();
+    initSensors();
     animate();
 
     function startWebcam() {
@@ -318,6 +323,19 @@
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
           .then(stream => { video.srcObject = stream; })
           .catch(err => { console.warn("Cámara no disponible:", err); });
+      }
+    }
+
+    function initSensors() {
+      if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', (e) => {
+          if (e.alpha !== null) {
+            if (initialAlpha === null) initialAlpha = e.alpha;
+            deviceAlpha = THREE.MathUtils.degToRad(e.alpha - initialAlpha);
+            deviceBeta = THREE.MathUtils.degToRad(e.beta || 0);
+            deviceGamma = THREE.MathUtils.degToRad(e.gamma || 0);
+          }
+        }, true);
       }
     }
 
@@ -359,7 +377,6 @@
       document.getElementById('restart-btn').addEventListener('click', resetPlacement);
     }
 
-    // --- CONSTRUCCIÓN LIMPIA DEL TERRENO CON HOYOS DIRECTOS ---
     function buildEnvironment() {
       groundGroup = new THREE.Group();
 
@@ -369,12 +386,10 @@
       baseMesh.position.y = -0.05;
       groundGroup.add(baseMesh);
 
-      // Hoyos limpios con marco de tierra y fondo oscuro
       holePositions.forEach((pos, idx) => {
         const holeGroup = new THREE.Group();
         holeGroup.position.set(pos.x, 0, pos.z);
 
-        // Borde plano del hoyo
         const ringGeo = new THREE.RingGeometry(0.14, 0.18, 32);
         const ringMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
@@ -382,7 +397,6 @@
         ringMesh.position.y = 0.002;
         holeGroup.add(ringMesh);
 
-        // Fondo oscuro del hoyo
         const innerGeo = new THREE.CircleGeometry(0.14, 32);
         const innerMat = new THREE.MeshBasicMaterial({ color: 0x0f0a06 });
         const innerMesh = new THREE.Mesh(innerGeo, innerMat);
@@ -524,6 +538,7 @@
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       if (!isPlaced) {
+        // Fijar las coordenadas exactas del punto seleccionado en el espacio 3D
         groundGroup.position.copy(reticleMesh.position);
         groundGroup.visible = true;
         reticleMesh.visible = false;
@@ -681,6 +696,11 @@
 
     function animate() {
       requestAnimationFrame(animate);
+
+      // Una vez colocado el terreno, orientar la cámara con los sensores del celular
+      if (isPlaced && deviceAlpha !== 0) {
+        camera.rotation.y = -deviceAlpha;
+      }
 
       activeElements.forEach((el, index) => {
         if (el.state === 'rising') {
