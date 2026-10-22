@@ -92,12 +92,12 @@
 <!-- MENÚ -->
 <section id="menuScreen" class="screen">
   <div class="panel">
-    <h1 class="title">🔨 CAZA TOPOS AR</h1>
+    <h1 class="title">CAZA TOPOS AR</h1>
     <p class="subtitle">Aplasta los topos que salen de los hoyos. ¡Cuidado con las bombas!</p>
     <div class="rules">
-      <div class="rule"><b>🐹</b><span>Apunta al topo y pulsa el martillo para aplastarlo: ganas puntos.</span></div>
-      <div class="rule"><b>💣</b><span>Si aplastas una bomba pierdes una vida. Tienes 3 vidas.</span></div>
-      <div class="rule"><b>⚡</b><span>Tienes 1 minuto: con el tiempo los topos salen más rápido y hay más bombas.</span></div>
+      <div class="rule"><span>Apunta al topo y pulsa el martillo para aplastarlo: ganas puntos.</span></div>
+      <div class="rule"><span>Si aplastas una bomba pierdes una vida. Tienes 3 vidas.</span></div>
+      <div class="rule"><span>Tienes 1 minuto: con el tiempo los topos salen más rápido y hay más bombas.</span></div>
     </div>
     <button id="startButton" class="btn">JUGAR</button>
   </div>
@@ -106,7 +106,6 @@
 <!-- CALIBRACIÓN -->
 <section id="calibrationScreen" class="screen hidden">
   <div class="panel">
-    <div style="font-size:64px">📱</div>
     <h2>Preparando el entorno</h2>
     <p class="subtitle">Mueve el teléfono para orientar la cámara hacia el suelo y pulsa el botón.</p>
     <button id="calibrateButton" class="btn btn-alt">MAPEAR ENTORNO</button>
@@ -119,7 +118,7 @@
   <div class="hud-top">
     <div class="hud-card"><span class="hud-label">Puntos</span><span id="scoreValue" class="hud-value">0</span></div>
     <div class="hud-card"><span class="hud-label">Nivel</span><span id="levelValue" class="hud-value">1</span></div>
-    <div class="hud-card"><span class="hud-label">Vidas</span><span id="livesValue" class="hud-value">❤️❤️❤️</span></div>
+    <div class="hud-card"><span class="hud-label">Vidas</span><span id="livesValue" class="hud-value">3</span></div>
     <div id="timeCard" class="hud-card"><span class="hud-label">Tiempo</span><span id="timeValue" class="hud-value">60</span></div>
   </div>
 </div>
@@ -171,11 +170,11 @@ const HOLES = [];
 function difficulty() {
   const l = GAME.level;
   return {
-    upTime:    Math.max(600, 1900 - (l - 1) * 170),   // ms que se queda arriba
-    interval:  Math.max(400, 1400 - (l - 1) * 130),   // ms entre apariciones
-    maxAlive:  Math.min(5, 1 + Math.floor((l - 1) / 2)),
-    maxBombs:  Math.min(4, 1 + Math.floor(l / 3)),
-    bombChance:Math.min(0.5, 0.12 + (l - 1) * 0.045)
+    upTime:    Math.max(450, 1300 - (l - 1) * 120),   // ms que se queda arriba
+    interval:  Math.max(300, 900 - (l - 1) * 85),     // ms entre apariciones
+    maxAlive:  Math.min(5, 2 + Math.floor((l - 1) / 2)),
+    maxBombs:  Math.min(4, 1 + Math.floor((l + 1) / 2)),
+    bombChance:Math.min(0.5, 0.2 + (l - 1) * 0.045)
   };
 }
 
@@ -527,7 +526,7 @@ function resolverGolpe(el) {
     playBomb();
     GAME.lives--;
     flashRed();
-    floatText(el, "💥 -1 ❤️", "#ff6b5a");
+    floatText(el, "-1 VIDA", "#ff6b5a");
 
     const boom = document.createElement("a-entity");
     boom.setAttribute("geometry", { primitive: "sphere", radius: 0.3 });
@@ -548,7 +547,7 @@ function resolverGolpe(el) {
 function updateHUD() {
   $("scoreValue").textContent = GAME.score;
   $("levelValue").textContent = GAME.level;
-  $("livesValue").textContent = "❤️".repeat(Math.max(0, GAME.lives)) || "💀";
+  $("livesValue").textContent = String(Math.max(0, GAME.lives));
   $("timeValue").textContent = GAME.timeLeft;
   $("timeCard").classList.toggle("low", GAME.timeLeft <= 10);
 }
@@ -603,7 +602,7 @@ function gameLoop(now) {
     const left = Math.max(0, Math.ceil(GAME_SECONDS - elapsed / 1000));
     const lvl = 1 + Math.floor(elapsed / 1000 / LEVEL_EVERY);
     if (left !== GAME.timeLeft) { GAME.timeLeft = left; updateHUD(); }
-    if (lvl > GAME.level) { GAME.level = lvl; updateHUD(); showMessage(`⚡ NIVEL ${lvl}`); }
+    if (lvl > GAME.level) { GAME.level = lvl; updateHUD(); }
     if (left <= 0) endGame("time");
     else if (now - GAME.lastSpawn >= difficulty().interval) { spawnTarget(); GAME.lastSpawn = now; }
   }
