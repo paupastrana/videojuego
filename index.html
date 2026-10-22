@@ -33,7 +33,7 @@
     <div class="hud-card"><div class="hud-title">NIVEL</div><div id="level-val" class="hud-value" style="color:#38bdf8">1</div></div>
     <div class="hud-card"><div class="hud-title">TIEMPO</div><div id="time-val" class="hud-value" style="color:#f43f5e">30s</div></div>
   </div>
-  <div id="scan-banner" class="scan-banner">📱 Pulsa “Iniciar AR” y mueve el teléfono para detectar una superficie</div>
+  <div id="scan-banner" class="scan-banner">📱 Pulsa "Iniciar AR" y mueve el teléfono para detectar una superficie</div>
 </div>
 
 <div id="gameover-modal" class="modal-overlay hidden">
@@ -162,6 +162,8 @@ function init() {
   ringGeo.rotateX(-Math.PI / 2);
   reticleMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide }));
   reticleMesh.visible = false;
+  // 🔧 FIX: desactivar frustum culling del reticle también (por seguridad)
+  reticleMesh.frustumCulled = false;
   scene.add(reticleMesh);
 
   buildEnvironment();
@@ -183,6 +185,8 @@ function buildEnvironment() {
 
   const base = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.1, 1.32), new THREE.MeshStandardMaterial({ color: 0x48bb78, roughness: 0.6 }));
   base.position.y = -0.05;
+  // 🔧 FIX: desactivar frustum culling del tablero para que no desaparezca al acercarse o moverse
+  base.frustumCulled = false;
   groundGroup.add(base);
 
   holePositions.forEach((pos, idx) => {
@@ -190,22 +194,27 @@ function buildEnvironment() {
     hg.position.set(pos.x, 0, pos.z);
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.18, 32), new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide }));
     ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
+    ring.frustumCulled = false; // 🔧 FIX
     const inner = new THREE.Mesh(new THREE.CircleGeometry(0.14, 32), new THREE.MeshBasicMaterial({ color: 0x0f0a06 }));
     inner.rotation.x = -Math.PI / 2; inner.position.y = 0.001;
+    inner.frustumCulled = false; // 🔧 FIX
     hg.add(ring, inner);
+    // 🔧 FIX: desactivar también en el grupo de cada hoyo
+    hg.frustumCulled = false;
     groundGroup.add(hg);
     holes.push({ group: hg, active: idx < 3 });
     hg.visible = idx < 3;
   });
 
   groundGroup.visible = false;
+  groundGroup.frustumCulled = false; // 🔧 FIX
   anchorGroup.add(groundGroup);
   scene.add(anchorGroup);
 }
 
 function createMoleMesh() {
   const g = new THREE.Group();
-  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.frustumCulled = false; g.add(m); return m; };
   const std = (c, r = 0.6, ex = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: r, ...ex });
   const basic = (c, ex = {}) => new THREE.MeshBasicMaterial({ color: c, ...ex });
   const sph = (r, sx = 1, sy = 1, sz = 1, w = 16, h = 12) => { const geo = new THREE.SphereGeometry(r, w, h); geo.scale(sx, sy, sz); return geo; };
@@ -225,19 +234,21 @@ function createMoleMesh() {
   add(hand, handM, -0.1, 0.04, 0.08); add(hand, handM, 0.1, 0.04, 0.08);
 
   g.position.y = -0.35;
+  g.frustumCulled = false; // 🔧 FIX
   return g;
 }
 
 function createBombMesh() {
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 24), new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2, metalness: 0.6 }));
-  body.position.y = 0.12;
+  body.position.y = 0.12; body.frustumCulled = false; // 🔧 FIX
   const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.07), new THREE.MeshBasicMaterial({ color: 0xd4a373 }));
-  fuse.position.set(0, 0.24, 0); fuse.rotation.z = 0.25;
+  fuse.position.set(0, 0.24, 0); fuse.rotation.z = 0.25; fuse.frustumCulled = false; // 🔧 FIX
   const spark = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
-  spark.position.set(0.02, 0.28, 0);
+  spark.position.set(0.02, 0.28, 0); spark.frustumCulled = false; // 🔧 FIX
   g.add(body, fuse, spark);
   g.position.y = -0.35;
+  g.frustumCulled = false; // 🔧 FIX
   return g;
 }
 
@@ -246,7 +257,8 @@ function startPreviewMode(arButton) {
   fallbackMode = true;
   arButton.textContent = '📱 Abrir en Needle Go (AR en iPhone)';
   scene.background = new THREE.Color(0x1e293b);
-  groundGroup.scale.setScalar(1);
+  // 🔧 FIX: no agrandar el tablero en preview; mantener BOARD_SCALE
+  groundGroup.scale.setScalar(BOARD_SCALE);
   groundGroup.visible = true;
   isPlaced = true;
   $('scan-banner').classList.add('hidden');
@@ -298,8 +310,8 @@ function onXRSessionEnd() {
   groundGroup.visible = false;
   $('hud-header').classList.add('hidden');
   $('gameover-modal').classList.add('hidden');
-  setBanner('Pulsa “Iniciar AR” para volver a jugar');
-  const b = $('start-ar-btn');           // antes quedaba oculto para siempre
+  setBanner('Pulsa "Iniciar AR" para volver a jugar');
+  const b = $('start-ar-btn');
   b.style.display = ''; b.disabled = false; b.textContent = '📱 Iniciar realidad aumentada';
 }
 
@@ -332,10 +344,13 @@ function placeBoard(frame, referenceSpace, result, pose) {
   anchorGroup.quaternion.copy(q0);
   groundGroup.quaternion.copy(q0.clone().invert().multiply(qWorld));
 
-  // Anclar al mundo real si el dispositivo lo permite; si no, queda fijo en la pose actual.
+  // 🔧 FIX: NO dependemos de createAnchor porque en iOS/Needle Go no está disponible.
+  // El tablero queda fijo en la pose del hit-test en el momento de colocación.
+  // Si en el futuro el dispositivo soporta anchors, se usará automáticamente.
   boardAnchor = null;
   if (result.createAnchor) {
-    result.createAnchor().then(a => { boardAnchor = a; }).catch(e => console.warn('[AR] Sin anchors:', e));
+    result.createAnchor().then(a => { boardAnchor = a; console.info('[AR] Anchor creado correctamente'); })
+      .catch(e => console.warn('[AR] Anchors no disponibles en este dispositivo (iOS/Needle Go):', e));
   }
 
   groundGroup.visible = true;
@@ -364,6 +379,8 @@ function updateXR(frame) {
   }
 
   if (isPlaced) {
+    // 🔧 FIX: solo actualizamos la pose si el anchor existe de verdad.
+    // En iOS boardAnchor será null y el tablero se queda donde lo colocaste.
     if (boardAnchor) {
       const p = frame.getPose(boardAnchor.anchorSpace, referenceSpace);
       if (p) {
