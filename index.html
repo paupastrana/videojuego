@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>Whack-a-Mole WebXR AR</title>
+  <title>Whack-a-Mole AR - Interactivo</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
 
@@ -20,7 +20,7 @@
       height: 100%;
       overflow: hidden;
       font-family: 'Fredoka', cursive, sans-serif;
-      background-color: #000000;
+      background-color: #0f172a;
       color: #ffffff;
     }
 
@@ -59,7 +59,7 @@
     }
 
     .hud-card {
-      background: rgba(15, 23, 42, 0.8);
+      background: rgba(15, 23, 42, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 2px solid rgba(255, 255, 255, 0.2);
@@ -93,30 +93,12 @@
       text-align: center;
       box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
       animation: pulseBanner 2s infinite ease-in-out;
-      margin-bottom: 70px;
+      margin-bottom: 20px;
     }
 
     @keyframes pulseBanner {
       0%, 100% { transform: scale(1); box-shadow: 0 0 15px rgba(34, 197, 94, 0.4); }
       50% { transform: scale(1.03); box-shadow: 0 0 25px rgba(34, 197, 94, 0.7); }
-    }
-
-    #ar-button {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 30;
-      background: #22c55e;
-      color: #ffffff;
-      border: none;
-      padding: 14px 28px;
-      font-size: 1.1rem;
-      font-family: 'Fredoka', sans-serif;
-      font-weight: 700;
-      border-radius: 30px;
-      box-shadow: 0 4px 15px rgba(34, 197, 94, 0.5);
-      cursor: pointer;
     }
 
     .modal-overlay {
@@ -159,18 +141,34 @@
       width: 100%;
     }
 
+    .btn-action:active {
+      transform: scale(0.96);
+    }
+
     .hidden {
       display: none !important;
     }
+
+    .score-popup {
+      position: absolute;
+      font-size: 1.8rem;
+      font-weight: 700;
+      pointer-events: none;
+      z-index: 15;
+      animation: floatUp 0.8s forwards ease-out;
+    }
+
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0) scale(0.8); }
+      100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+    }
   </style>
 
-  <!-- Three.js CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
   <div id="canvas-container"></div>
-  <button id="ar-button" class="interactive">INICIAR CÁMARA AR 📱</button>
 
   <div class="ui-layer">
     <div id="hud-header" class="hud-header hidden">
@@ -188,22 +186,22 @@
       </div>
     </div>
 
-    <div id="scan-banner" class="scan-banner hidden">
-      📍 Mueve tu teléfono para detectar la mesa/suelo y TOCA LA PANTALLA para anclar
+    <div id="scan-banner" class="scan-banner">
+      📍 Mueve el cursor/pantalla y TOCA para fijar el terreno de juego
     </div>
   </div>
 
   <div id="gameover-modal" class="modal-overlay hidden interactive">
     <div class="modal-card">
       <h2 style="font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px;">¡TIEMPO AGOTADO! ⏰</h2>
-      <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 20px;">Atrapaste los topos y esquivaste las bombas en tu entorno.</p>
+      <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 20px;">Atrapaste a los topos y esquivaste las bombas.</p>
       
       <div style="background: rgba(15, 23, 42, 0.6); padding: 16px; border-radius: 16px; margin-bottom: 20px;">
         <div style="font-size: 0.85rem; color: #94a3b8;">PUNTAJE FINAL</div>
         <div id="final-score" style="font-size: 2.5rem; font-weight: 700; color: #facc15;">0</div>
       </div>
 
-      <button id="restart-btn" class="btn-action">Jugar de Nuevo</button>
+      <button id="restart-btn" class="btn-action">Reubicar y Jugar de Nuevo</button>
     </div>
   </div>
 
@@ -283,13 +281,11 @@
 
     const sound = new SoundFX();
 
-    let container, scene, camera, renderer;
-    let reticle, hitTestSource = null, hitTestSourceRequested = false;
+    let scene, camera, renderer, raycaster, mouse;
+    let reticleMesh, isPlaced = false;
     let groundGroup;
     let holes = [];
     let activeElements = [];
-    let isPlaced = false;
-
     let score = 0, level = 1, timeLeft = 30;
     let gameActive = false, gameTimerInterval = null, spawnTimeout = null;
 
@@ -298,86 +294,75 @@
       { x: -0.5, z: 0.3 },  { x: 0, z: 0.3 },  { x: 0.5, z: 0.3 }
     ];
 
+    const virtualFloorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
     init();
+    animate();
 
     function init() {
-      container = document.getElementById('canvas-container');
+      const container = document.getElementById('canvas-container');
 
       scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+      scene.background = new THREE.Color(0x0f172a);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setPixelRatio(window.devicePixelRatio);
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(0, 2.2, 2.2);
+      camera.lookAt(0, 0, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
       container.appendChild(renderer.domElement);
 
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-      scene.add(ambientLight);
-
+      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
       const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.2);
-      dirLight.position.set(2, 4, 2);
+      dirLight.position.set(2, 4, 3);
       scene.add(dirLight);
 
-      // Anillo verde para detección de planos
-      const ringGeo = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      // Retícula de escaneo/anclaje
+      const ringGeo = new THREE.RingGeometry(0.25, 0.32, 32);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide });
-      reticle = new THREE.Mesh(ringGeo, ringMat);
-      reticle.matrixAutoUpdate = false;
-      reticle.visible = false;
-      scene.add(reticle);
+      reticleMesh = new THREE.Mesh(ringGeo, ringMat);
+      reticleMesh.rotation.x = -Math.PI / 2;
+      reticleMesh.position.y = 0.01;
+      scene.add(reticleMesh);
 
       buildEnvironment();
 
-      const controller = renderer.xr.getController(0);
-      controller.addEventListener('select', onSelect);
-      scene.add(controller);
-
-      document.getElementById('ar-button').addEventListener('click', onARButtonClick);
-      document.getElementById('restart-btn').addEventListener('click', startGame);
       window.addEventListener('resize', onWindowResize);
-
-      renderer.setAnimationLoop(render);
-    }
-
-    async function onARButtonClick() {
-      if (navigator.xr) {
-        try {
-          const session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['hit-test']
-          });
-          renderer.xr.setSession(session);
-          document.getElementById('ar-button').style.display = 'none';
-        } catch (e) {
-          alert("WebXR AR no está soportado o requiere HTTPS en tu celular.");
-        }
-      } else {
-        alert("Tu navegador no soporta WebXR. Intenta desde Chrome móvil.");
-      }
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerdown', onPointerDown);
+      document.getElementById('restart-btn').addEventListener('click', resetPlacement);
     }
 
     function buildEnvironment() {
       groundGroup = new THREE.Group();
 
-      const baseGeo = new THREE.BoxGeometry(1.8, 0.1, 1.3);
+      const baseGeo = new THREE.BoxGeometry(1.8, 0.12, 1.3);
       const baseMat = new THREE.MeshStandardMaterial({ color: 0x4da63b, roughness: 0.8 });
       const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-      baseMesh.position.y = -0.05;
+      baseMesh.position.y = -0.06;
       groundGroup.add(baseMesh);
 
       holePositions.forEach((pos, idx) => {
         const holeGroup = new THREE.Group();
         holeGroup.position.set(pos.x, 0, pos.z);
 
-        const ringGeo = new THREE.RingGeometry(0.14, 0.2, 32).rotateX(-Math.PI / 2);
+        const ringGeo = new THREE.RingGeometry(0.14, 0.2, 32);
         const ringMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide });
         const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = -Math.PI / 2;
         ringMesh.position.y = 0.002;
         holeGroup.add(ringMesh);
 
-        const innerGeo = new THREE.CircleGeometry(0.14, 32).rotateX(-Math.PI / 2);
+        const innerGeo = new THREE.CircleGeometry(0.14, 32);
         const innerMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
         const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+        innerMesh.rotation.x = -Math.PI / 2;
         innerMesh.position.y = 0.001;
         holeGroup.add(innerMesh);
 
@@ -419,7 +404,6 @@
 
     function createBombMesh() {
       const bombGroup = new THREE.Group();
-
       const bodyGeo = new THREE.SphereGeometry(0.11, 24, 24);
       const bodyMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.3, metalness: 0.5 });
       const body = new THREE.Mesh(bodyGeo, bodyMat);
@@ -436,53 +420,71 @@
       return bombGroup;
     }
 
-    function onSelect() {
-      if (!isPlaced && reticle.visible) {
-        groundGroup.position.setFromMatrixPosition(reticle.matrix);
-        groundGroup.quaternion.setFromRotationMatrix(reticle.matrix);
+    function onPointerMove(event) {
+      if (isPlaced) return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const targetPoint = new THREE.Vector3();
+      raycaster.ray.intersectPlane(virtualFloorPlane, targetPoint);
+
+      if (targetPoint) {
+        reticleMesh.position.copy(targetPoint);
+      }
+    }
+
+    function onPointerDown(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      if (!isPlaced) {
+        groundGroup.position.copy(reticleMesh.position);
         groundGroup.visible = true;
-        reticle.visible = false;
+        reticleMesh.visible = false;
         isPlaced = true;
 
         document.getElementById('scan-banner').classList.add('hidden');
         document.getElementById('hud-header').classList.remove('hidden');
 
         startGame();
-      } else if (gameActive) {
-        const controller = renderer.xr.getController(0);
-        const tempMatrix = new THREE.Matrix4();
-        tempMatrix.identity().extractRotation(controller.matrixWorld);
+        return;
+      }
 
-        const raycaster = new THREE.Raycaster();
-        raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
-        raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+      if (!gameActive) return;
 
-        const intersects = raycaster.intersectObjects(activeElements.map(el => el.mesh), true);
+      raycaster.setFromCamera(mouse, camera);
+      const meshesToIntersect = activeElements.map(el => el.mesh);
+      const intersects = raycaster.intersectObjects(meshesToIntersect, true);
 
-        if (intersects.length > 0) {
-          let hitObject = intersects[0].object;
-          while (hitObject.parent && hitObject.parent !== groundGroup) hitObject = hitObject.parent;
+      if (intersects.length > 0) {
+        let hitObject = intersects[0].object;
+        while (hitObject.parent && hitObject.parent !== groundGroup) {
+          hitObject = hitObject.parent;
+        }
 
-          const elementIdx = activeElements.findIndex(el => el.mesh === hitObject);
-          if (elementIdx !== -1) {
-            const el = activeElements[elementIdx];
+        const elementIdx = activeElements.findIndex(el => el.mesh === hitObject);
+        if (elementIdx !== -1) {
+          const el = activeElements[elementIdx];
 
-            if (el.type === 'mole') {
-              sound.playHit();
-              score += 100;
-              checkLevelProgress();
-            } else {
-              sound.playExplosion();
-              score = Math.max(0, score - 150);
-              timeLeft = Math.max(0, timeLeft - 3);
-            }
-
-            document.getElementById('score-val').innerText = score;
-            document.getElementById('time-val').innerText = `${timeLeft}s`;
-
-            groundGroup.remove(el.mesh);
-            activeElements.splice(elementIdx, 1);
+          if (el.type === 'mole') {
+            sound.playHit();
+            score += 100;
+            showPopup('+100', event.clientX, event.clientY, '#4ade80');
+            checkLevelProgress();
+          } else {
+            sound.playExplosion();
+            score = Math.max(0, score - 150);
+            timeLeft = Math.max(0, timeLeft - 3);
+            showPopup('-150', event.clientX, event.clientY, '#f87171');
           }
+
+          document.getElementById('score-val').innerText = score;
+          document.getElementById('time-val').innerText = `${timeLeft}s`;
+
+          groundGroup.remove(el.mesh);
+          activeElements.splice(elementIdx, 1);
         }
       }
     }
@@ -564,6 +566,26 @@
       }
     }
 
+    function resetPlacement() {
+      isPlaced = false;
+      groundGroup.visible = false;
+      reticleMesh.visible = true;
+      document.getElementById('gameover-modal').classList.add('hidden');
+      document.getElementById('hud-header').classList.add('hidden');
+      document.getElementById('scan-banner').classList.remove('hidden');
+    }
+
+    function showPopup(text, x, y, color) {
+      const pop = document.createElement('div');
+      pop.className = 'score-popup';
+      pop.innerText = text;
+      pop.style.left = `${x - 20}px`;
+      pop.style.top = `${y - 20}px`;
+      pop.style.color = color;
+      document.body.appendChild(pop);
+      setTimeout(() => pop.remove(), 800);
+    }
+
     function endGame() {
       gameActive = false;
       clearInterval(gameTimerInterval);
@@ -573,60 +595,26 @@
       document.getElementById('gameover-modal').classList.remove('hidden');
     }
 
-    function render(timestamp, frame) {
-      if (frame) {
-        const session = renderer.xr.getSession();
+    function animate() {
+      requestAnimationFrame(animate);
 
-        if (!isPlaced) {
-          document.getElementById('scan-banner').classList.remove('hidden');
-
-          if (!hitTestSourceRequested) {
-            session.requestReferenceSpace('viewer').then((referenceSpace) => {
-              session.requestHitTestSource({ space: referenceSpace }).then((source) => {
-                hitTestSource = source;
-              });
-            });
-
-            session.addEventListener('end', () => {
-              hitTestSourceRequested = false;
-              hitTestSource = null;
-            });
-
-            hitTestSourceRequested = true;
+      activeElements.forEach((el, index) => {
+        if (el.state === 'rising') {
+          el.progress += 0.08;
+          el.mesh.position.y = THREE.MathUtils.lerp(-0.3, 0, el.progress);
+          if (el.progress >= 1) {
+            el.state = 'waiting';
+            setTimeout(() => { el.state = 'lowering'; el.progress = 0; }, 1000 - level * 100);
           }
-
-          if (hitTestSource) {
-            const referenceSpace = renderer.xr.getReferenceSpace();
-            const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-            if (hitTestResults.length > 0) {
-              const hit = hitTestResults[0];
-              reticle.visible = true;
-              reticle.matrix.fromArray(hit.getPose(referenceSpace).transform.matrix);
-            } else {
-              reticle.visible = false;
-            }
+        } else if (el.state === 'lowering') {
+          el.progress += 0.08;
+          el.mesh.position.y = THREE.MathUtils.lerp(0, -0.3, el.progress);
+          if (el.progress >= 1) {
+            groundGroup.remove(el.mesh);
+            activeElements.splice(index, 1);
           }
         }
-
-        activeElements.forEach((el, index) => {
-          if (el.state === 'rising') {
-            el.progress += 0.08;
-            el.mesh.position.y = THREE.MathUtils.lerp(-0.3, 0, el.progress);
-            if (el.progress >= 1) {
-              el.state = 'waiting';
-              setTimeout(() => { el.state = 'lowering'; el.progress = 0; }, 1000 - level * 100);
-            }
-          } else if (el.state === 'lowering') {
-            el.progress += 0.08;
-            el.mesh.position.y = THREE.MathUtils.lerp(0, -0.3, el.progress);
-            if (el.progress >= 1) {
-              groundGroup.remove(el.mesh);
-              activeElements.splice(index, 1);
-            }
-          }
-        });
-      }
+      });
 
       renderer.render(scene, camera);
     }
