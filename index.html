@@ -26,6 +26,19 @@
 
     #webcam { display: none; }
 
+    /* En AR, el DOM no debe pintar un fondo negro encima de la cámara real. */
+    html.xr-active, body.xr-active {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+    body.xr-active #canvas-container,
+    body.xr-active canvas {
+      background: transparent !important;
+    }
+    body.xr-active .ui-layer {
+      background: transparent !important;
+    }
+
     #canvas-container {
       width: 100%;
       height: 100%;
@@ -316,6 +329,7 @@
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setClearColor(0x000000, 0);
+      renderer.setClearAlpha(0);
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.shadowMap.enabled = true;
@@ -338,9 +352,11 @@
           }
           arButton.disabled = true;
           arButton.textContent = 'Iniciando AR…';
+          // El fondo del documento debe ser transparente durante AR para no tapar el passthrough.
+          renderer.xr.setReferenceSpaceType('local');
           const session = await navigator.xr.requestSession('immersive-ar', {
             requiredFeatures: ['hit-test'],
-            optionalFeatures: ['dom-overlay'],
+            optionalFeatures: ['dom-overlay', 'local-floor'],
             domOverlay: { root: document.body }
           });
           await renderer.xr.setSession(session);
@@ -530,6 +546,8 @@
     }
 
     function onXRSessionStart() {
+      document.documentElement.classList.add('xr-active');
+      document.body.classList.add('xr-active');
       xrSession = renderer.xr.getSession();
       hitTestSourceRequested = false;
       hitTestSource = null;
@@ -542,6 +560,8 @@
     }
 
     function onXRSessionEnd() {
+      document.documentElement.classList.remove('xr-active');
+      document.body.classList.remove('xr-active');
       xrSession = null;
       hitTestSource = null;
       hitTestSourceRequested = false;
@@ -608,30 +628,55 @@
         const session = renderer.xr.getSession();
         const referenceSpace = renderer.xr.getReferenceSpace();
         if (session && referenceSpace) {
-          if (!hitTestSourceRequested) {
-            session.requestReferenceSpace('viewer').then(viewerSpace => {
-              session.requestHitTestSource({ space: viewerSpace }).then(source => {
-                hitTestSource = source;
-              }).catch(err => console.warn('No se pudo crear hit-test:', err));
-            }).catch(err => console.warn('No se pudo obtener viewer space:', err));
+          // Si falla la creación del hit-test, se vuelve a intentar en el siguiente frame.
+          if (!hitTestSource && !hitTestSourceRequested) {
             hitTestSourceRequested = true;
+            session.requestReferenceSpace('viewer')
+              .then(viewerSpace => session.requestHitTestSource({ space: viewerSpace }))
+              .then(source => {
+                hitTestSource = source;
+                console.info('[Topitos AR] Hit-test listo.');
+              })
+              .catch(err => {
+                console.error('[Topitos AR] No se pudo crear hit-test:', err);
+                hitTestSourceRequested = false;
+                const banner = document.getElementById('scan-banner');
+                banner.classList.remove('hidden');
+                banner.innerText = 'No pude activar la detección de superficies. Mueve el teléfono y vuelve a intentar.';
+              });
           }
+
           if (hitTestSource) {
-            const results = frame.getHitTestResults(hitTestSource);
-            if (results.length > 0) {
-              const pose = results[0].getPose(referenceSpace);
-              reticleMesh.visible = !isPlaced;
-              reticleMesh.matrix.fromArray(pose.transform.matrix);
-              reticleMesh.matrix.decompose(reticleMesh.position, reticleMesh.quaternion, reticleMesh.scale);
-              reticleMesh.updateMatrixWorld(true);
-              surfaceFound = true;
-              if (!isPlaced) document.getElementById('scan-banner').innerText = '✅ Superficie detectada. Toca para colocar el tablero';
-            } else {
-              surfaceFound = false;
-              if (!isPlaced) {
-                reticleMesh.visible = false;
-                document.getElementById('scan-banner').innerText = 'Mueve lentamente el teléfono para detectar una superficie';
+            try {
+              const results = frame.getHitTestResults(hitTestSource);
+              if (results.length > 0) {
+                const pose = results[0].getPose(referenceSpace);
+                if (pose) {
+                  reticleMesh.visible = !isPlaced;
+                  reticleMesh.matrix.fromArray(pose.transform.matrix);
+                  reticleMesh.matrix.decompose(reticleMesh.position, reticleMesh.quaternion, reticleMesh.scale);
+                  reticleMesh.updateMatrixWorld(true);
+                  surfaceFound = true;
+                  if (!isPlaced) {
+                    const banner = document.getElementById('scan-banner');
+                    banner.classList.remove('hidden');
+                    banner.innerText = '✅ Superficie detectada. Toca la pantalla para colocar el tablero';
+                  }
+                }
+              } else {
+                surfaceFound = false;
+                if (!isPlaced) {
+                  reticleMesh.visible = false;
+                  const banner = document.getElementById('scan-banner');
+                  banner.classList.remove('hidden');
+                  banner.innerText = 'Busca el piso o una mesa con buena luz y mueve lentamente el teléfono';
+                }
               }
+            } catch (err) {
+              console.error('[Topitos AR] Error leyendo hit-test:', err);
+              hitTestSource = null;
+              hitTestSourceRequested = false;
+              surfaceFound = false;
             }
           }
         }
@@ -658,6 +703,7 @@
           }
         }
       }
+      renderer.setClearColor(0x000000, 0);
       renderer.render(scene, camera);
     }
 
