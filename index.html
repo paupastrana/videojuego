@@ -1,570 +1,890 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Whack-a-Mole AR</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@500;700&display=swap');
-  * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
-  body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Fredoka', cursive, sans-serif; background: #000; color: #fff; }
-  html.xr-active, body.xr-active, body.xr-active #canvas-container, body.xr-active canvas, body.xr-active .ui-layer { background: transparent !important; }
-  #canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
-  .ui-layer { position: absolute; inset: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; }
-  .hud-header { display: flex; justify-content: space-between; gap: 8px; }
-  .hud-card { background: rgba(15,23,42,.85); border: 2px solid rgba(255,255,255,.2); border-radius: 16px; padding: 8px 14px; }
-  .hud-title { font-size: .65rem; text-transform: uppercase; color: #94a3b8; letter-spacing: 1px; }
-  .hud-value { font-size: 1.2rem; font-weight: 700; color: #facc15; }
-  .scan-banner { align-self: center; background: rgba(15,23,42,.9); border: 2px solid #22c55e; border-radius: 25px; padding: 12px 24px; color: #f0fdf4; text-align: center; margin-bottom: 70px; }
-  .modal-overlay { position: absolute; inset: 0; background: rgba(15,23,42,.85); z-index: 20; display: flex; justify-content: center; align-items: center; padding: 24px; }
-  .modal-card { background: rgba(30,41,59,.95); border: 2px solid rgba(255,255,255,.2); border-radius: 28px; padding: 32px 24px; max-width: 360px; width: 100%; text-align: center; }
-  .btn-action { background: linear-gradient(135deg,#22c55e,#16a34a); color: #fff; border: 0; padding: 14px 28px; font: 700 1.1rem Fredoka, sans-serif; border-radius: 20px; cursor: pointer; width: 100%; }
-  .btn-action:active { transform: scale(.96); }
-  .hidden { display: none !important; }
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  >
+  <title>Caza-Topos AR</title>
+
+  <!-- =====================================================
+       THREE.JS (Motor 3D para evitar pantalla negra)
+  ====================================================== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- =====================================================
+       ESTILOS
+  ====================================================== -->
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #050505;
+      font-family: Arial, Helvetica, sans-serif;
+      color: white;
+      touch-action: manipulation;
+    }
+
+    body {
+      position: relative;
+    }
+
+    /* =====================================================
+       VIDEO DE CÁMARA (Fondo Real)
+    ====================================================== -->
+    #cameraVideo {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+      z-index: 0;
+      display: none;
+    }
+
+    /* =====================================================
+       CANVAS 3D TRANSPARENTE
+    ====================================================== -->
+    #webglCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: auto;
+    }
+
+    /* =====================================================
+       PANTALLAS / MENÚS
+    ====================================================== -->
+    .screen {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      background: radial-gradient(
+        circle at center,
+        rgba(30,30,30,.75),
+        rgba(0,0,0,.95)
+      );
+      backdrop-filter: blur(4px);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .panel {
+      width: min(92vw, 600px);
+      padding: 28px;
+      border-radius: 24px;
+      background: linear-gradient(
+        145deg,
+        rgba(30,30,30,.95),
+        rgba(8,8,8,.95)
+      );
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 25px 80px rgba(0,0,0,.7);
+      text-align: center;
+    }
+
+    .title {
+      margin: 0 0 8px;
+      font-size: clamp(32px, 8vw, 56px);
+      font-weight: 900;
+      letter-spacing: -2px;
+      color: #7cfc00;
+      text-shadow: 0 3px 15px rgba(50,205,50,.3);
+    }
+
+    .subtitle {
+      margin: 0 0 25px;
+      color: #aaa;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .section-title {
+      margin: 22px 0 12px;
+      font-size: 13px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: #888;
+    }
+
+    /* =====================================================
+       BOTONES
+    ====================================================== -->
+    .btn {
+      width: 100%;
+      min-height: 54px;
+      border: none;
+      border-radius: 14px;
+      margin-top: 10px;
+      padding: 14px 20px;
+      color: white;
+      background: #222;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .12s ease, background .12s ease;
+    }
+
+    .btn:active {
+      transform: scale(.96);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #32cd32, #008000);
+      box-shadow: 0 10px 30px rgba(50,205,50,.22);
+    }
+
+    .btn-secondary {
+      background: #191919;
+      border: 1px solid #333;
+    }
+
+    /* =====================================================
+       MODOS
+    ====================================================== -->
+    .mode-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 10px;
+    }
+
+    .mode-card {
+      min-height: 140px;
+      padding: 20px;
+      border-radius: 18px;
+      background: #151515;
+      border: 2px solid #292929;
+      cursor: pointer;
+    }
+
+    .mode-card.selected {
+      border-color: #32cd32;
+      background: linear-gradient(145deg, rgba(50,205,50,.16), rgba(0,80,0,.18));
+    }
+
+    .mode-icon {
+      font-size: 38px;
+      margin-bottom: 8px;
+    }
+
+    .mode-name {
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .mode-description {
+      margin-top: 6px;
+      color: #888;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    /* =====================================================
+       HUD
+    ====================================================== -->
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .hud-top {
+      position: absolute;
+      top: 15px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .hud-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .hud-card {
+      min-width: 75px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(0,0,0,.7);
+      border: 1px solid rgba(255,255,255,.15);
+      backdrop-filter: blur(5px);
+      text-align: center;
+    }
+
+    .hud-label {
+      display: block;
+      font-size: 8px;
+      text-transform: uppercase;
+      color: #777;
+      letter-spacing: 1px;
+    }
+
+    .hud-value {
+      display: block;
+      margin-top: 2px;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    /* =====================================================
+       BOOSTERS Y BOMBAS
+    ====================================================== -->
+    #boosters {
+      position: fixed;
+      left: 15px;
+      bottom: 25px;
+      z-index: 15;
+      display: flex;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    .booster {
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.2);
+      background: rgba(20,20,20,.85);
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      position: relative;
+      box-shadow: 0 5px 15px rgba(0,0,0,.5);
+    }
+
+    .booster small {
+      position: absolute;
+      bottom: -16px;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      color: #aaa;
+      font-size: 8px;
+      font-weight: bold;
+    }
+
+    .booster:disabled {
+      opacity: .3;
+      cursor: not-allowed;
+    }
+
+    /* =====================================================
+       MENSAJE FLOTANTE
+    ====================================================== -->
+    #message {
+      position: fixed;
+      left: 50%;
+      top: 22%;
+      transform: translateX(-50%);
+      z-index: 18;
+      padding: 12px 20px;
+      border-radius: 14px;
+      background: rgba(0,0,0,.85);
+      border: 1px solid rgba(255,255,255,.15);
+      font-size: 16px;
+      font-weight: 900;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+
+    #message.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-5px);
+    }
+
+    /* =====================================================
+       GAME OVER
+    ====================================================== -->
+    .game-over-title {
+      font-size: 38px;
+      margin: 0 0 10px;
+      font-weight: 900;
+      color: #ff3b30;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin: 20px 0;
+    }
+
+    .stat {
+      padding: 14px;
+      border-radius: 14px;
+      background: #151515;
+    }
+
+    .stat-number {
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .stat-label {
+      margin-top: 4px;
+      color: #777;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+  </style>
 </head>
+
 <body>
-<div id="canvas-container"></div>
 
-<div class="ui-layer">
-  <div id="hud-header" class="hud-header hidden">
-    <div class="hud-card"><div class="hud-title">PUNTOS</div><div id="score-val" class="hud-value">0</div></div>
-    <div class="hud-card"><div class="hud-title">NIVEL</div><div id="level-val" class="hud-value" style="color:#38bdf8">1</div></div>
-    <div class="hud-card"><div class="hud-title">TIEMPO</div><div id="time-val" class="hud-value" style="color:#f43f5e">30s</div></div>
-  </div>
-  <div id="scan-banner" class="scan-banner">📱 Pulsa "Iniciar AR" y mueve el teléfono para detectar una superficie</div>
-</div>
+  <!-- Video de cámara en vivo -->
+  <video
+    id="cameraVideo"
+    autoplay
+    playsinline
+    muted
+  ></video>
 
-<div id="gameover-modal" class="modal-overlay hidden">
-  <div class="modal-card">
-    <h2 style="font-size:1.8rem;margin-bottom:8px">¡TIEMPO AGOTADO! ⏰</h2>
-    <p style="color:#cbd5e1;margin-bottom:20px">Atrapaste a los topos y esquivaste las bombas.</p>
-    <div style="background:rgba(15,23,42,.6);padding:16px;border-radius:16px;margin-bottom:20px">
-      <div style="font-size:.85rem;color:#94a3b8">PUNTAJE FINAL</div>
-      <div id="final-score" style="font-size:2.5rem;font-weight:700;color:#facc15">0</div>
+  <!-- Canvas WebGL Transparente -->
+  <canvas id="webglCanvas"></canvas>
+
+  <!-- =====================================================
+       MENÚ PRINCIPAL
+  ====================================================== -->
+  <section id="menuScreen" class="screen">
+    <div class="panel">
+      <h1 class="title">CAZA-TOPOS AR</h1>
+      <p class="subtitle">
+        ¡Toca directamente a los topos en la plataforma de Realidad Aumentada!
+      </p>
+
+      <div class="section-title">Selecciona el modo</div>
+
+      <div class="mode-grid">
+        <div id="modeLevels" class="mode-card selected" data-mode="levels">
+          <div class="mode-icon">🎯</div>
+          <div class="mode-name">Niveles</div>
+          <div class="mode-description">Supera rondas cada vez más veloces.</div>
+        </div>
+
+        <div id="modeSurvival" class="mode-card" data-mode="survival">
+          <div class="mode-icon">⏱️</div>
+          <div class="mode-name">Supervivencia</div>
+          <div class="mode-description">Atrapa todos los que puedas sin perder vidas.</div>
+        </div>
+      </div>
+
+      <button id="startButton" class="btn btn-primary" style="margin-top: 25px;">
+        INICIAR PARTIDA
+      </button>
     </div>
-    <button id="restart-btn" class="btn-action">Jugar de nuevo</button>
-    <button id="replace-btn" class="btn-action" style="margin-top:10px;background:#334155">Recolocar tablero</button>
+  </section>
+
+  <!-- =====================================================
+       HUD DE JUEGO
+  ====================================================== -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="hud-group">
+        <div class="hud-card">
+          <span class="hud-label">Puntos</span>
+          <span id="scoreValue" class="hud-value">0</span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">Nivel</span>
+          <span id="levelValue" class="hud-value">1</span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">Vidas</span>
+          <span id="livesValue" class="hud-value">❤️❤️❤️</span>
+        </div>
+      </div>
+
+      <div class="hud-group">
+        <div class="hud-card">
+          <span class="hud-label">Escapados</span>
+          <span id="escapedValue" class="hud-value">0</span>
+        </div>
+        <div class="hud-card">
+          <span class="hud-label">Racha</span>
+          <span id="streakValue" class="hud-value">🔥 0</span>
+        </div>
+      </div>
+    </div>
   </div>
-</div>
 
-<script>
-class SoundFX {
-  constructor() { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
-  _tone(type, f0, f1, dur, vol, delay = 0) {
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    const t = this.ctx.currentTime + delay, o = this.ctx.createOscillator(), g = this.ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f0, t);
-    if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.linearRampToValueAtTime(0, t + dur);
-    o.connect(g); g.connect(this.ctx.destination); o.start(t); o.stop(t + dur);
-  }
-  playPop() { this._tone('sine', 300, 800, 0.08, 0.3); }
-  playHit() { this._tone('triangle', 160, 40, 0.15, 0.5); }
-  playLevelUp() { [440, 554.37, 659.25, 880].forEach((f, i) => this._tone('sine', f, f, 0.1, 0.2, i * 0.08)); }
-  playExplosion() {
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    const n = this.ctx.sampleRate * 0.3, buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
-    const src = this.ctx.createBufferSource(); src.buffer = buf;
-    const f = this.ctx.createBiquadFilter(), g = this.ctx.createGain(), t = this.ctx.currentTime;
-    f.type = 'lowpass'; f.frequency.setValueAtTime(800, t); f.frequency.linearRampToValueAtTime(50, t + 0.3);
-    g.gain.setValueAtTime(0.6, t); g.gain.linearRampToValueAtTime(0, t + 0.3);
-    src.connect(f); f.connect(g); g.connect(this.ctx.destination); src.start();
-  }
-}
-const sound = new SoundFX();
+  <!-- =====================================================
+       BOOSTERS Y BOMBA NUCLEAR
+  ====================================================== -->
+  <div id="boosters" class="hidden">
+    <button id="weaponBooster" class="booster" disabled title="Martillo x2">
+      🔨 <small>x2</small>
+    </button>
+    <button id="nuclearBooster" class="booster" disabled title="Bomba Limpiadora">
+      💣 <small>BOMBA</small>
+    </button>
+  </div>
 
-// Tamaño real del tablero en AR (1 = 1.8 m de ancho, demasiado grande para una mesa).
-const BOARD_SCALE = 0.5;
-// Enlace para abrir esta misma página dentro de Needle Go (solo funciona con una URL https pública).
-const NEEDLE_GO_URL = () => 'https://appclip.needle.tools/ar?url=' + encodeURIComponent(window.location.href);
+  <!-- Mensaje de notificaciones -->
+  <div id="message"></div>
 
-let scene, camera, renderer, raycaster, mouse, controller;
-let reticleMesh, anchorGroup, groundGroup;
-let isPlaced = false, placeRequested = false, surfaceFound = false, boardAnchor = null;
-let hitTestSource = null, hitTestSourceRequested = false;
-let fallbackMode = false;
-let holes = [], activeElements = [];
-let score = 0, level = 1, timeLeft = 30;
-let gameActive = false, gameTimerInterval = null, spawnTimeout = null;
-let lastTap = null; // 🔧 FIX: posición del último toque en pantalla
+  <!-- =====================================================
+       GAME OVER
+  ====================================================== -->
+  <section id="gameOverScreen" class="screen hidden">
+    <div class="panel">
+      <h1 class="game-over-title">¡FIN DEL JUEGO!</h1>
+      <p class="subtitle">Los topos se llevaron tus reservas.</p>
 
-const holePositions = [
-  { x: -0.5, z: -0.3 }, { x: 0, z: -0.3 }, { x: 0.5, z: -0.3 },
-  { x: -0.5, z: 0.3 },  { x: 0, z: 0.3 },  { x: 0.5, z: 0.3 }
-];
-const $ = id => document.getElementById(id);
-const setBanner = txt => { const b = $('scan-banner'); b.classList.remove('hidden'); b.innerText = txt; };
+      <div class="stats">
+        <div class="stat">
+          <div id="finalScore" class="stat-number">0</div>
+          <div class="stat-label">Puntos</div>
+        </div>
+        <div class="stat">
+          <div id="finalLevel" class="stat-number">1</div>
+          <div class="stat-label">Nivel</div>
+        </div>
+        <div class="stat">
+          <div id="finalKills" class="stat-number">0</div>
+          <div class="stat-label">Atrapados</div>
+        </div>
+        <div class="stat">
+          <div id="finalTime" class="stat-number">0s</div>
+          <div class="stat-label">Tiempo</div>
+        </div>
+      </div>
 
-init();
+      <button id="restartButton" class="btn btn-primary">
+        JUGAR DE NUEVO
+      </button>
+      <button id="menuButton" class="btn btn-secondary">
+        VOLVER AL MENÚ
+      </button>
+    </div>
+  </section>
 
-function init() {
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.01, 100);
-  camera.position.set(0, 2.2, 2.2);
-  camera.lookAt(0, 0, 0);
+  <!-- =====================================================
+       LÓGICA THREE.JS & JUEGO
+  ====================================================== -->
+  <script>
+    const GAME = {
+      running: false,
+      score: 0,
+      level: 1,
+      lives: 3,
+      kills: 0,
+      streak: 0,
+      escaped: 0,
+      startTime: 0,
+      spawnInterval: 2000,
+      lastSpawn: 0,
+      doublePoints: false
+    };
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setClearColor(0x000000, 0);
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.xr.enabled = true;
-  renderer.xr.setReferenceSpaceType('local');
-  $('canvas-container').appendChild(renderer.domElement);
+    // DOM Elements
+    const cameraVideo = document.getElementById("cameraVideo");
+    const menuScreen = document.getElementById("menuScreen");
+    const gameOverScreen = document.getElementById("gameOverScreen");
+    const hud = document.getElementById("hud");
+    const boosters = document.getElementById("boosters");
+    const message = document.getElementById("message");
 
-  // 🔧 FIX: captura el punto exacto del toque para usarlo como rayo en móvil
-  renderer.domElement.addEventListener('pointerdown', (e) => {
-    lastTap = { x: e.clientX, y: e.clientY };
-  }, { passive: true });
+    const startButton = document.getElementById("startButton");
+    const restartButton = document.getElementById("restartButton");
+    const menuButton = document.getElementById("menuButton");
 
-  const arButton = document.createElement('button');
-  arButton.id = 'start-ar-btn';
-  arButton.type = 'button';
-  arButton.textContent = '📱 Iniciar realidad aumentada';
-  arButton.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1000;padding:14px 20px;border-radius:14px;border:0;background:#16a34a;color:#fff;font:700 16px Fredoka,sans-serif;white-space:nowrap;';
-  arButton.addEventListener('click', async () => {
-    if (!navigator.xr || !navigator.xr.requestSession) {
-      window.location.href = NEEDLE_GO_URL(); // Safari de iPhone no tiene WebXR: abrir con Needle Go
-      return;
+    const scoreValue = document.getElementById("scoreValue");
+    const levelValue = document.getElementById("levelValue");
+    const livesValue = document.getElementById("livesValue");
+    const escapedValue = document.getElementById("escapedValue");
+    const streakValue = document.getElementById("streakValue");
+
+    const weaponBooster = document.getElementById("weaponBooster");
+    const nuclearBooster = document.getElementById("nuclearBooster");
+
+    const finalScore = document.getElementById("finalScore");
+    const finalLevel = document.getElementById("finalLevel");
+    const finalKills = document.getElementById("finalKills");
+    const finalTime = document.getElementById("finalTime");
+
+    // Three.js Setup
+    const canvas = document.getElementById("webglCanvas");
+    const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.8, 3.2);
+    camera.lookAt(0, 0, 0);
+
+    // Luces
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(5, 10, 5);
+    scene.add(dirLight);
+
+    // Plataforma / Arena en el plano
+    const platformGroup = new THREE.Group();
+    platformGroup.position.set(0, 0, 0);
+
+    const woodBoxGeo = new THREE.BoxGeometry(2.4, 0.25, 2.4);
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const woodMesh = new THREE.Mesh(woodBoxGeo, woodMat);
+    woodMesh.position.y = -0.125;
+    platformGroup.add(woodMesh);
+
+    const grassBoxGeo = new THREE.BoxGeometry(2.2, 0.06, 2.2);
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x2e8b57 });
+    const grassMesh = new THREE.Mesh(grassBoxGeo, grassMat);
+    grassMesh.position.y = 0.02;
+    platformGroup.add(grassMesh);
+
+    scene.add(platformGroup);
+
+    // Lista de topos activos
+    let activeMoles = [];
+
+    // Audio Simple con Web Audio API
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'hit') {
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      } else if (type === 'escape') {
+        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(150, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      }
     }
-    try {
-      arButton.disabled = true;
-      arButton.textContent = 'Iniciando AR…';
-      const session = await navigator.xr.requestSession('immersive-ar', {
-        requiredFeatures: ['hit-test'],
-        optionalFeatures: ['dom-overlay', 'local-floor', 'anchors'],
-        domOverlay: { root: document.body }
+
+    // Iniciar Cámara en Vivo
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        cameraVideo.srcObject = stream;
+        cameraVideo.style.display = "block";
+      } catch (e) {
+        console.warn("Cámara no disponible, usando fondo por defecto.");
+        cameraVideo.style.display = "none";
+      }
+    }
+
+    startButton.addEventListener("click", async () => {
+      menuScreen.classList.add("hidden");
+      await startCamera();
+      startGame();
+    });
+
+    function showMessage(text, duration = 1500) {
+      message.textContent = text;
+      message.classList.add("show");
+      setTimeout(() => message.classList.remove("show"), duration);
+    }
+
+    function startGame() {
+      GAME.running = true;
+      GAME.score = 0;
+      GAME.level = 1;
+      GAME.lives = 3;
+      GAME.kills = 0;
+      GAME.streak = 0;
+      GAME.escaped = 0;
+      GAME.startTime = Date.now();
+      GAME.spawnInterval = 2000;
+
+      hud.classList.remove("hidden");
+      boosters.classList.remove("hidden");
+      updateHUD();
+    }
+
+    // Creación de un Topo 3D en posición aleatoria sobre la plataforma
+    function spawnMole() {
+      if (!GAME.running) return;
+
+      const moleGroup = new THREE.Group();
+      // Coordenadas aleatorias dentro del plano (-0.8 a 0.8)
+      const rx = (Math.random() - 0.5) * 1.6;
+      const rz = (Math.random() - 0.5) * 1.6;
+      moleGroup.position.set(rx, 0.05, rz);
+
+      // Hoyito
+      const holeGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.05, 16);
+      const holeMat = new THREE.MeshStandardMaterial({ color: 0x1a0f0a });
+      const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+      holeMesh.position.y = 0.02;
+      moleGroup.add(holeMesh);
+
+      // Cuerpo del Topo (subgrupo para animar subida/bajada)
+      const bodyGroup = new THREE.Group();
+      bodyGroup.position.y = -0.3; // Inicialmente oculto en el hoyo
+
+      const bodyGeo = new THREE.SphereGeometry(0.14, 16, 16);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8d5524 });
+      const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+      bodyMesh.position.y = 0.1;
+      bodyGroup.add(bodyMesh);
+
+      // Nariz
+      const noseGeo = new THREE.SphereGeometry(0.04, 8, 8);
+      const noseMat = new THREE.MeshStandardMaterial({ color: 0xd7ccc8 });
+      const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+      noseMesh.position.set(0, 0.12, 0.11);
+      bodyGroup.add(noseMesh);
+
+      // Ojos
+      const eyeGeo = new THREE.SphereGeometry(0.018, 8, 8);
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+      
+      const eye1 = new THREE.Mesh(eyeGeo, eyeMat);
+      eye1.position.set(-0.04, 0.18, 0.09);
+      bodyGroup.add(eye1);
+
+      const eye2 = new THREE.Mesh(eyeGeo, eyeMat);
+      eye2.position.set(0.04, 0.18, 0.09);
+      bodyGroup.add(eye2);
+
+      moleGroup.add(bodyGroup);
+      scene.add(moleGroup);
+
+      // Datos del topo para el ciclo de vida
+      const moleData = {
+        group: moleGroup,
+        body: bodyGroup,
+        state: 'rising', // rising, waiting, lowering, dead
+        timer: 0,
+        maxWait: Math.max(600, 1500 - (GAME.level * 100)),
+        targetY: 0.22
+      };
+
+      activeMoles.push(moleData);
+    }
+
+    function hitMole(moleData) {
+      if (moleData.state === 'dead') return;
+      moleData.state = 'dead';
+      playSound('hit');
+
+      const pts = GAME.doublePoints ? 20 : 10;
+      GAME.score += pts;
+      GAME.kills++;
+      GAME.streak++;
+      showMessage(`¡Atrapado! +${pts} 🎯`, 700);
+
+      // Efecto aplastamiento visual
+      moleData.body.scale.set(1, 0.2, 1);
+
+      setTimeout(() => {
+        scene.remove(moleData.group);
+        activeMoles = activeMoles.filter(m => m !== moleData);
+      }, 150);
+
+      if (GAME.kills % 5 === 0) {
+        GAME.level++;
+        GAME.spawnInterval = Math.max(700, GAME.spawnInterval - 250);
+        showMessage(`¡NIVEL ${GAME.level}! 🚀`, 1500);
+      }
+
+      updateHUD();
+    }
+
+    function moleEscaped(moleData) {
+      if (moleData.state === 'dead') return;
+      moleData.state = 'dead';
+      playSound('escape');
+
+      GAME.escaped++;
+      GAME.streak = 0;
+      GAME.lives--;
+      showMessage("¡Topo escapó! ❌", 800);
+      updateHUD();
+
+      scene.remove(moleData.group);
+      activeMoles = activeMoles.filter(m => m !== moleData);
+
+      if (GAME.lives <= 0) {
+        endGame();
+      }
+    }
+
+    // Detección de toque directo en pantalla sobre los topos (Raycaster)
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('pointerdown', (e) => {
+      if (!GAME.running) return;
+
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+
+      // Buscar intersecciones con los cuerpos de los topos
+      const meshes = activeMoles.map(m => m.body.children[0]);
+      const intersects = raycaster.intersectObjects(meshes);
+
+      if (intersects.length > 0) {
+        const hitMesh = intersects[0].object;
+        const found = activeMoles.find(m => m.body.children[0] === hitMesh);
+        if (found) {
+          hitMole(found);
+        }
+      }
+    });
+
+    // Boosters / Botones de Poder
+    weaponBooster.addEventListener("click", () => {
+      GAME.doublePoints = true;
+      weaponBooster.disabled = true;
+      showMessage("¡Martillo x2 Activado! 🔥", 2000);
+      setTimeout(() => GAME.doublePoints = false, 10000);
+    });
+
+    nuclearBooster.addEventListener("click", () => {
+      nuclearBooster.disabled = true;
+      showMessage("¡BOMBA NUCLEAR DETONADA! 💣", 2000);
+      // Eliminar todos los topos activos de golpe
+      activeMoles.forEach(m => {
+        if (m.state !== 'dead') {
+          GAME.score += 10;
+          GAME.kills++;
+          scene.remove(m.group);
+        }
       });
-      await renderer.xr.setSession(session);
-      arButton.style.display = 'none';
-    } catch (error) {
-      console.error('No se pudo iniciar AR:', error);
-      setBanner('No se pudo iniciar AR: ' + (error.message || error.name || 'error desconocido'));
-      arButton.disabled = false;
-      arButton.textContent = '📱 Reintentar realidad aumentada';
+      activeMoles = [];
+      updateHUD();
+    });
+
+    function updateHUD() {
+      scoreValue.textContent = GAME.score;
+      levelValue.textContent = GAME.level;
+      livesValue.textContent = "❤️".repeat(Math.max(0, GAME.lives));
+      escapedValue.textContent = GAME.escaped;
+      streakValue.textContent = `🔥 ${GAME.streak}`;
+
+      if (GAME.kills >= 8) weaponBooster.removeAttribute("disabled");
+      if (GAME.kills >= 15) nuclearBooster.removeAttribute("disabled");
     }
-  });
-  document.body.appendChild(arButton);
 
-  renderer.xr.addEventListener('sessionstart', onXRSessionStart);
-  renderer.xr.addEventListener('sessionend', onXRSessionEnd);
-  controller = renderer.xr.getController(0);
-  controller.addEventListener('select', onXRSelect);
-  scene.add(controller);
+    function endGame() {
+      GAME.running = false;
+      hud.classList.add("hidden");
+      boosters.classList.add("hidden");
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-  const dir = new THREE.DirectionalLight(0xfff5ea, 1.2);
-  dir.position.set(2, 4, 3);
-  scene.add(dir);
+      activeMoles.forEach(m => scene.remove(m.group));
+      activeMoles = [];
 
-  raycaster = new THREE.Raycaster();
-  mouse = new THREE.Vector2();
+      finalScore.textContent = GAME.score;
+      finalLevel.textContent = GAME.level;
+      finalKills.textContent = GAME.kills;
+      finalTime.textContent = Math.floor((Date.now() - GAME.startTime) / 1000) + "s";
 
-  const ringGeo = new THREE.RingGeometry(0.15, 0.2, 32);
-  ringGeo.rotateX(-Math.PI / 2);
-  reticleMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x22c55e, side: THREE.DoubleSide }));
-  reticleMesh.visible = false;
-  reticleMesh.frustumCulled = false; // 🔧 FIX
-  scene.add(reticleMesh);
-
-  buildEnvironment();
-  addEventListener('resize', onWindowResize);
-  renderer.setAnimationLoop(renderXRFrame);
-
-  $('restart-btn').addEventListener('click', () => { $('gameover-modal').classList.add('hidden'); startGame(); });
-  $('replace-btn').addEventListener('click', () => { boardAnchor = null; placeRequested = false; resetPlacement(); });
-
-  setTimeout(() => { if (!navigator.xr && !renderer.xr.isPresenting) startPreviewMode(arButton); }, 1500);
-}
-
-function buildEnvironment() {
-  anchorGroup = new THREE.Group();
-  groundGroup = new THREE.Group();
-  groundGroup.scale.setScalar(BOARD_SCALE);
-  groundGroup.frustumCulled = false; // 🔧 FIX
-
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.1, 1.32), new THREE.MeshStandardMaterial({ color: 0x48bb78, roughness: 0.6 }));
-  base.position.y = -0.05;
-  base.frustumCulled = false; // 🔧 FIX: evita que el tablero desaparezca
-  groundGroup.add(base);
-
-  holePositions.forEach((pos, idx) => {
-    const hg = new THREE.Group();
-    hg.position.set(pos.x, 0, pos.z);
-    hg.frustumCulled = false; // 🔧 FIX
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.14, 0.18, 32), new THREE.MeshStandardMaterial({ color: 0x5c4033, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.002;
-    ring.frustumCulled = false; // 🔧 FIX
-    const inner = new THREE.Mesh(new THREE.CircleGeometry(0.14, 32), new THREE.MeshBasicMaterial({ color: 0x0f0a06 }));
-    inner.rotation.x = -Math.PI / 2; inner.position.y = 0.001;
-    inner.frustumCulled = false; // 🔧 FIX
-    hg.add(ring, inner);
-    groundGroup.add(hg);
-    holes.push({ group: hg, active: idx < 3 });
-    hg.visible = idx < 3;
-  });
-
-  groundGroup.visible = false;
-  anchorGroup.add(groundGroup);
-  scene.add(anchorGroup);
-}
-
-function createMoleMesh() {
-  const g = new THREE.Group();
-  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.frustumCulled = false; g.add(m); return m; };
-  const std = (c, r = 0.6, ex = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: r, ...ex });
-  const basic = (c, ex = {}) => new THREE.MeshBasicMaterial({ color: c, ...ex });
-  const sph = (r, sx = 1, sy = 1, sz = 1, w = 16, h = 12) => { const geo = new THREE.SphereGeometry(r, w, h); geo.scale(sx, sy, sz); return geo; };
-
-  add(sph(0.13, 1, 1.15, 0.95, 32, 24), std(0x8b5a2b), 0, 0.13, 0);
-  add(sph(0.065, 1, 0.75, 1.2, 20, 16), std(0xf5e0c3, 0.5), 0, 0.11, 0.075);
-  add(sph(0.022, 1, 1, 1, 14, 14), std(0xf48fb1, 0.3), 0, 0.13, 0.14);
-  const eye = sph(0.018, 1, 1, 1, 14, 14), eyeM = basic(0x111111);
-  add(eye, eyeM, -0.045, 0.17, 0.095); add(eye, eyeM, 0.045, 0.17, 0.095);
-  const shine = sph(0.006, 1, 1, 1, 8, 8), shineM = basic(0xffffff);
-  add(shine, shineM, -0.042, 0.176, 0.11); add(shine, shineM, 0.048, 0.176, 0.11);
-  const cheek = sph(0.018, 1, 1, 1, 12, 12), cheekM = basic(0xf472b6, { transparent: true, opacity: 0.55 });
-  add(cheek, cheekM, -0.07, 0.13, 0.09); add(cheek, cheekM, 0.07, 0.13, 0.09);
-  const helmet = add(new THREE.SphereGeometry(0.12, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2.2), std(0xfacc15, 0.3, { metalness: 0.2 }), 0, 0.13, 0);
-  helmet.rotation.x = -0.15;
-  const hand = sph(0.03, 1.2, 0.6, 1, 12, 12), handM = std(0xf5e0c3);
-  add(hand, handM, -0.1, 0.04, 0.08); add(hand, handM, 0.1, 0.04, 0.08);
-
-  g.position.y = -0.35;
-  g.frustumCulled = false; // 🔧 FIX
-  return g;
-}
-
-function createBombMesh() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.12, 24, 24), new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.2, metalness: 0.6 }));
-  body.position.y = 0.12; body.frustumCulled = false; // 🔧 FIX
-  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.07), new THREE.MeshBasicMaterial({ color: 0xd4a373 }));
-  fuse.position.set(0, 0.24, 0); fuse.rotation.z = 0.25; fuse.frustumCulled = false; // 🔧 FIX
-  const spark = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
-  spark.position.set(0.02, 0.28, 0); spark.frustumCulled = false; // 🔧 FIX
-  g.add(body, fuse, spark);
-  g.position.y = -0.35;
-  g.frustumCulled = false; // 🔧 FIX
-  return g;
-}
-
-// ---------- Modo vista previa (sin WebXR) ----------
-function startPreviewMode(arButton) {
-  fallbackMode = true;
-  arButton.textContent = '📱 Abrir en Needle Go (AR en iPhone)';
-  scene.background = new THREE.Color(0x1e293b);
-  groundGroup.scale.setScalar(BOARD_SCALE); // 🔧 FIX
-  groundGroup.visible = true;
-  isPlaced = true;
-  $('scan-banner').classList.add('hidden');
-  $('hud-header').classList.remove('hidden');
-  $('replace-btn').classList.add('hidden');
-  renderer.domElement.addEventListener('pointerdown', onPreviewPointer);
-  startGame();
-}
-
-function leavePreviewMode() {
-  if (!fallbackMode) return;
-  fallbackMode = false;
-  stopGame();
-  scene.background = null;
-  groundGroup.scale.setScalar(BOARD_SCALE);
-  $('gameover-modal').classList.add('hidden');
-  $('replace-btn').classList.remove('hidden');
-  renderer.domElement.removeEventListener('pointerdown', onPreviewPointer);
-}
-
-function onPreviewPointer(e) {
-  if (!gameActive) return;
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
-  tryWhack();
-}
-
-// ---------- Sesión XR ----------
-function onXRSessionStart() {
-  leavePreviewMode();
-  document.documentElement.classList.add('xr-active');
-  document.body.classList.add('xr-active');
-  hitTestSource = null; hitTestSourceRequested = false;
-  surfaceFound = false; isPlaced = false; placeRequested = false; boardAnchor = null;
-  reticleMesh.visible = false;
-  groundGroup.visible = false;
-  stopGame();
-  $('hud-header').classList.add('hidden');
-  setBanner('Mueve lentamente el teléfono para detectar una superficie');
-}
-
-function onXRSessionEnd() {
-  document.documentElement.classList.remove('xr-active');
-  document.body.classList.remove('xr-active');
-  hitTestSource = null; hitTestSourceRequested = false;
-  surfaceFound = false; isPlaced = false; placeRequested = false; boardAnchor = null;
-  stopGame();
-  reticleMesh.visible = false;
-  groundGroup.visible = false;
-  $('hud-header').classList.add('hidden');
-  $('gameover-modal').classList.add('hidden');
-  setBanner('Pulsa "Iniciar AR" para volver a jugar');
-  const b = $('start-ar-btn');
-  b.style.display = ''; b.disabled = false; b.textContent = '📱 Iniciar realidad aumentada';
-}
-
-// 🔧 FIX: en móvil no hay mando; usamos el toque en pantalla para el rayo
-function onXRSelect(event) {
-  if (!isPlaced) {
-    if (surfaceFound) placeRequested = true;
-    else setBanner('No detecto una superficie todavía. Apunta al piso o a una mesa y mueve el teléfono.');
-    return;
-  }
-  if (!gameActive) return;
-
-  const session = renderer.xr.getSession();
-  const refSpace = renderer.xr.getReferenceSpace();
-  let pose = null;
-  try {
-    if (event && event.inputSource && event.inputSource.targetRaySpace && session && refSpace) {
-      pose = event.frame.getPose(event.inputSource.targetRaySpace, refSpace);
+      gameOverScreen.classList.remove("hidden");
     }
-  } catch (e) { /* ignorar */ }
 
-  if (pose) {
-    const m = new THREE.Matrix4().fromArray(pose.transform.matrix);
-    const origin = new THREE.Vector3().setFromMatrixPosition(m);
-    const dir = new THREE.Vector3(0, 0, -1).transformDirection(m);
-    raycaster.set(origin, dir.normalize());
-  } else {
-    // Fallback: rayo desde la cámara a través del punto del toque
-    if (lastTap) {
-      mouse.set((lastTap.x / innerWidth) * 2 - 1, -(lastTap.y / innerHeight) * 2 + 1);
-    } else {
-      mouse.set(0, 0);
-    }
-    raycaster.setFromCamera(mouse, camera);
-  }
-  tryWhack();
-}
+    restartButton.addEventListener("click", () => {
+      gameOverScreen.classList.add("hidden");
+      startGame();
+    });
 
-function placeBoard(frame, referenceSpace, result, pose) {
-  placeRequested = false;
-  const pos = new THREE.Vector3(), q0 = new THREE.Quaternion(), s = new THREE.Vector3();
-  new THREE.Matrix4().fromArray(pose.transform.matrix).decompose(pos, q0, s);
+    menuButton.addEventListener("click", () => {
+      gameOverScreen.classList.add("hidden");
+      menuScreen.classList.remove("hidden");
+    });
 
-  const viewer = frame.getViewerPose(referenceSpace);
-  let yaw = 0;
-  if (viewer) {
-    const p = viewer.transform.position;
-    yaw = Math.atan2(p.x - pos.x, p.z - pos.z);
-  }
-  const qWorld = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-  anchorGroup.position.copy(pos);
-  anchorGroup.quaternion.copy(q0);
-  groundGroup.quaternion.copy(q0.clone().invert().multiply(qWorld));
+    // Loop Principal de Animación
+    let clock = new THREE.Clock();
 
-  // 🔧 FIX: anchor opcional (iOS/Needle Go no lo soporta → queda fijo en la pose)
-  boardAnchor = null;
-  if (result.createAnchor) {
-    result.createAnchor().then(a => { boardAnchor = a; console.info('[AR] Anchor creado correctamente'); })
-      .catch(e => console.warn('[AR] Anchors no disponibles en este dispositivo:', e));
-  }
+    function animate() {
+      requestAnimationFrame(animate);
 
-  groundGroup.visible = true;
-  reticleMesh.visible = false;
-  isPlaced = true;
-  $('scan-banner').classList.add('hidden');
-  $('hud-header').classList.remove('hidden');
-  startGame();
-}
+      const delta = clock.getDelta();
 
-function updateXR(frame) {
-  const session = renderer.xr.getSession();
-  const referenceSpace = renderer.xr.getReferenceSpace();
-  if (!session || !referenceSpace) return;
+      if (GAME.running) {
+        const now = Date.now();
+        if (now - GAME.lastSpawn > GAME.spawnInterval) {
+          spawnMole();
+          GAME.lastSpawn = now;
+        }
 
-  if (!hitTestSource && !hitTestSourceRequested) {
-    hitTestSourceRequested = true;
-    session.requestReferenceSpace('viewer')
-      .then(viewerSpace => session.requestHitTestSource({ space: viewerSpace }))
-      .then(source => { hitTestSource = source; console.info('[AR] Hit-test listo'); })
-      .catch(err => {
-        console.error('[AR] No se pudo crear hit-test:', err);
-        hitTestSourceRequested = false;
-        setBanner('No pude activar la detección de superficies. Mueve el teléfono y vuelve a intentar.');
-      });
-  }
-
-  if (isPlaced) {
-    if (boardAnchor) {
-      const p = frame.getPose(boardAnchor.anchorSpace, referenceSpace);
-      if (p) {
-        anchorGroup.matrix.fromArray(p.transform.matrix);
-        anchorGroup.matrix.decompose(anchorGroup.position, anchorGroup.quaternion, anchorGroup.scale);
+        // Actualizar estados de los topos
+        for (let i = activeMoles.length - 1; i >= 0; i--) {
+          const m = activeMoles[i];
+          if (m.state === 'rising') {
+            m.body.position.y += delta * 2.0;
+            if (m.body.position.y >= m.targetY) {
+              m.body.position.y = m.targetY;
+              m.state = 'waiting';
+              m.timer = 0;
+            }
+          } else if (m.state === 'waiting') {
+            m.timer += delta * 1000;
+            if (m.timer >= m.maxWait) {
+              m.state = 'lowering';
+            }
+          } else if (m.state === 'lowering') {
+            m.body.position.y -= delta * 2.0;
+            if (m.body.position.y <= -0.3) {
+              moleEscaped(m);
+            }
+          }
+        }
       }
-    } else {
-      // 🔧 FIX: si el tablero queda muy lejos (perdido), lo re-centramos delante de la cámara
-      const camPos = new THREE.Vector3();
-      camera.getWorldPosition(camPos);
-      if (camPos.distanceTo(anchorGroup.position) > 4) {
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-        const newPos = camPos.clone().add(forward.multiplyScalar(1.5));
-        newPos.y = camPos.y - 0.4;
-        anchorGroup.position.copy(newPos);
-        const yaw = Math.atan2(camPos.x - newPos.x, camPos.z - newPos.z);
-        groundGroup.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      }
+
+      renderer.render(scene, camera);
     }
-    return;
-  }
-  if (!hitTestSource) return;
 
-  try {
-    const results = frame.getHitTestResults(hitTestSource);
-    const pose = results.length ? results[0].getPose(referenceSpace) : null;
-    if (pose) {
-      reticleMesh.visible = true;
-      reticleMesh.matrix.fromArray(pose.transform.matrix);
-      reticleMesh.matrix.decompose(reticleMesh.position, reticleMesh.quaternion, reticleMesh.scale);
-      surfaceFound = true;
-      setBanner('✅ Superficie detectada. Toca la pantalla para colocar el tablero');
-      if (placeRequested) placeBoard(frame, referenceSpace, results[0], pose);
-    } else {
-      surfaceFound = false;
-      reticleMesh.visible = false;
-      setBanner('Busca el piso o una mesa con buena luz y mueve lentamente el teléfono');
-    }
-  } catch (err) {
-    console.error('[AR] Error leyendo hit-test:', err);
-    hitTestSource = null; hitTestSourceRequested = false; surfaceFound = false;
-  }
-}
+    animate();
 
-function renderXRFrame(timestamp, frame) {
-  if (frame) updateXR(frame);
-  animateElements();
-  renderer.render(scene, camera);
-}
-
-function animateElements() {
-  for (let i = activeElements.length - 1; i >= 0; i--) {
-    const el = activeElements[i];
-    if (el.state === 'rising') {
-      el.progress += 0.08;
-      el.mesh.position.y = THREE.MathUtils.lerp(-0.35, 0, Math.min(el.progress, 1));
-      if (el.progress >= 1) {
-        el.state = 'waiting';
-        setTimeout(() => {
-          if (activeElements.includes(el) && el.state === 'waiting') { el.state = 'lowering'; el.progress = 0; }
-        }, Math.max(250, 1000 - level * 100));
-      }
-    } else if (el.state === 'lowering') {
-      el.progress += 0.08;
-      el.mesh.position.y = THREE.MathUtils.lerp(0, -0.35, Math.min(el.progress, 1));
-      if (el.progress >= 1) { groundGroup.remove(el.mesh); activeElements.splice(i, 1); }
-    }
-  }
-}
-
-// ---------- Juego ----------
-function tryWhack() {
-  const hits = raycaster.intersectObjects(activeElements.map(el => el.mesh), true);
-  if (!hits.length) return;
-  let obj = hits[0].object;
-  while (obj.parent && obj.parent !== groundGroup) obj = obj.parent;
-  const idx = activeElements.findIndex(el => el.mesh === obj);
-  if (idx === -1) return;
-
-  const el = activeElements[idx];
-  if (el.type === 'mole') {
-    sound.playHit(); score += 100; checkLevelProgress();
-  } else {
-    sound.playExplosion(); score = Math.max(0, score - 150); timeLeft = Math.max(0, timeLeft - 3);
-  }
-  $('score-val').innerText = score;
-  $('time-val').innerText = `${timeLeft}s`;
-  groundGroup.remove(el.mesh);
-  activeElements.splice(idx, 1);
-  if (timeLeft <= 0) endGame();
-}
-
-function stopGame() {
-  gameActive = false;
-  clearInterval(gameTimerInterval);
-  clearTimeout(spawnTimeout);
-  activeElements.forEach(el => groundGroup.remove(el.mesh));
-  activeElements = [];
-}
-
-function startGame() {
-  stopGame();
-  score = 0; level = 1; timeLeft = 30; gameActive = true;
-  $('score-val').innerText = score;
-  $('level-val').innerText = level;
-  $('time-val').innerText = `${timeLeft}s`;
-  $('gameover-modal').classList.add('hidden');
-  holes.forEach((h, i) => { h.active = i < 3; h.group.visible = i < 3; });
-
-  gameTimerInterval = setInterval(() => {
-    if (!gameActive) return;
-    timeLeft--;
-    $('time-val').innerText = `${timeLeft}s`;
-    if (timeLeft <= 0) endGame();
-  }, 1000);
-  scheduleNextSpawn();
-}
-
-function scheduleNextSpawn() {
-  if (!gameActive) return;
-  spawnTimeout = setTimeout(() => { spawnElement(); scheduleNextSpawn(); }, Math.max(600, 1500 - level * 150));
-}
-
-function spawnElement() {
-  const free = holes.map((h, idx) => ({ h, idx })).filter(o => o.h.active && !activeElements.some(el => el.holeIdx === o.idx));
-  if (!free.length) return;
-  const sel = free[Math.floor(Math.random() * free.length)];
-  const isBomb = Math.random() < 0.25;
-  const mesh = isBomb ? createBombMesh() : createMoleMesh();
-  mesh.position.set(holePositions[sel.idx].x, -0.35, holePositions[sel.idx].z);
-  groundGroup.add(mesh);
-  sound.playPop();
-  activeElements.push({ mesh, type: isBomb ? 'bomb' : 'mole', holeIdx: sel.idx, state: 'rising', progress: 0 });
-}
-
-function checkLevelProgress() {
-  const newLevel = Math.floor(score / 400) + 1;
-  if (newLevel > level && newLevel <= 4) {
-    level = newLevel;
-    $('level-val').innerText = level;
-    sound.playLevelUp();
-    const h = holes.find(h => !h.active);
-    if (h) { h.active = true; h.group.visible = true; }
-  }
-}
-
-function resetPlacement() {
-  stopGame();
-  isPlaced = false; surfaceFound = false;
-  groundGroup.visible = false;
-  $('gameover-modal').classList.add('hidden');
-  $('hud-header').classList.add('hidden');
-  setBanner('Mueve el teléfono y toca para colocar el tablero de nuevo');
-}
-
-function endGame() {
-  gameActive = false;
-  clearInterval(gameTimerInterval);
-  clearTimeout(spawnTimeout);
-  $('final-score').innerText = score;
-  $('gameover-modal').classList.remove('hidden');
-}
-
-function onWindowResize() {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-}
-</script>
+    // Ajustar pantalla al redimensionar
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
 </body>
+
 </html>
